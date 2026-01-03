@@ -19,6 +19,13 @@
         --text-soft: #bdbdbd;
         --accent: #ffffff;
         --glow: rgba(255, 255, 255, 0.08);
+        --user-zoom: 1;
+        --auto-scale: clamp(
+          0.4,
+          min(calc((100vw - 40px) / 1060), calc((100vh - 40px) / 720)),
+          1
+        );
+        --scale: calc(var(--auto-scale) * var(--user-zoom));
         --neck-label-width: 64px;
       }
 
@@ -30,9 +37,10 @@
         margin: 0;
         min-height: 100vh;
         display: flex;
-        justify-content: center;
-        align-items: center;
+        justify-content: flex-start;
+        align-items: flex-start;
         padding: 20px;
+        overflow: auto;
         background: radial-gradient(circle at top, #171717, var(--bg) 55%);
       }
 
@@ -41,20 +49,23 @@
         background: var(--panel);
         border: 1px solid var(--border);
         border-radius: 18px;
-        padding: 24px 36px 24px 24px;
+        padding: 20px 32px 20px 20px;
         box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
+        transform: scale(var(--scale));
+        transform-origin: top left;
+        transition: transform 0.15s ease;
       }
 
       header {
         display: grid;
-        gap: 16px;
+        gap: 12px;
         grid-template-columns: 1fr auto;
         align-items: center;
       }
 
       h1 {
         margin: 0;
-        font-size: 1.6rem;
+        font-size: 1.3rem;
         font-weight: 600;
         letter-spacing: 0.02em;
       }
@@ -67,11 +78,11 @@
       }
 
       .velocity-pill {
-        font-size: 0.8rem;
+        font-size: 0.72rem;
         color: var(--text-soft);
         border: 1px solid var(--border);
         background: #0b0b0b;
-        padding: 4px 10px;
+        padding: 3px 8px;
         border-radius: 999px;
         letter-spacing: 0.04em;
       }
@@ -82,15 +93,15 @@
 
       .settings summary {
         list-style: none;
-        width: 38px;
-        height: 38px;
+        width: 34px;
+        height: 34px;
         border-radius: 10px;
         border: 1px solid var(--border);
         background: var(--panel-strong);
         display: grid;
         place-items: center;
         cursor: pointer;
-        font-size: 1.1rem;
+        font-size: 1rem;
       }
 
       .settings summary::-webkit-details-marker {
@@ -116,7 +127,7 @@
         border: 1px solid var(--border);
         border-radius: 12px;
         background: var(--panel-strong);
-        min-width: 280px;
+        min-width: 260px;
       }
 
       label {
@@ -227,6 +238,12 @@
         border-color: #ffffff;
         color: #ffffff;
         background: #1a1a1a;
+      }
+
+      .fret,
+      .neck-fret {
+        cursor: pointer;
+        touch-action: none;
       }
 
       .classic-markers {
@@ -410,6 +427,11 @@
               <input id="bend-range" type="range" min="1" max="12" value="2" step="1" />
               <span id="bend-value">2 st</span>
             </div>
+            <div class="range-row">
+              <label for="zoom">Zoom</label>
+              <input id="zoom" type="range" min="0.25" max="2.5" value="1" step="0.05" />
+              <span id="zoom-value">100%</span>
+            </div>
             <div class="toggle">
               <button id="mode-classic" type="button" aria-pressed="true">Classic</button>
               <button id="mode-neck" type="button" aria-pressed="false">Neck</button>
@@ -430,8 +452,8 @@
               <div><span>A:</span> A S D F G H J K L ; '</div>
               <div><span>Z:</span> Z X C V B N M , . / Shift</div>
               <div>
-                <span>Other:</span> Caps = high strings, Arrows = bend/transpose, Space = vibrato,
-                ` / Tab = velocity
+                <span>Other:</span> Caps = high strings, Arrows = bend/transpose, Enter = vibrato, Space = sustain,
+                ` / Tab = velocity, Delete/Backspace = slant
               </div>
             </div>
           </div>
@@ -692,9 +714,13 @@
       const soundFontStatus = document.getElementById("soundfont-status");
       const bendRange = document.getElementById("bend-range");
       const bendValue = document.getElementById("bend-value");
+      const zoomRange = document.getElementById("zoom");
+      const zoomValue = document.getElementById("zoom-value");
       const vibratoRate = document.getElementById("vibrato-rate");
       const vibratoValue = document.getElementById("vibrato-value");
       const velocityDisplay = document.getElementById("velocity-display");
+      const settings = document.getElementById("settings");
+      const mainEl = document.querySelector("main");
 
       let midiAccess = null;
       let midiOutput = null;
@@ -707,7 +733,11 @@
       let bendSemitones = Number(bendRange.value);
       let noteVelocity = 100;
       let soundFontEnabled = false;
+      let sustainActive = false;
+      let autoScale = 1;
       const activeNotes = new Map();
+      const sustainedNotes = new Set();
+      const pointerNotes = new Map();
 
       let audioCtx = null;
       let master = null;
@@ -743,6 +773,31 @@
 
       function updateVelocityDisplay() {
         velocityDisplay.textContent = `Vel ${noteVelocity}`;
+      }
+
+      function applyScale() {
+        const userZoom = Number(zoomRange.value);
+        const scale = autoScale * userZoom;
+        document.documentElement.style.setProperty("--user-zoom", userZoom.toFixed(2));
+        document.documentElement.style.setProperty("--scale", scale.toFixed(3));
+        zoomValue.textContent = `${Math.round(userZoom * 100)}%`;
+      }
+
+      function updateAutoScale() {
+        if (!mainEl) return;
+        const baseWidth = mainEl.scrollWidth;
+        const baseHeight = mainEl.scrollHeight;
+        const availableW = window.innerWidth - 40;
+        const availableH = window.innerHeight - 40;
+        autoScale = Math.min(1, availableW / baseWidth, availableH / baseHeight);
+        if (!Number.isFinite(autoScale) || autoScale <= 0) {
+          autoScale = 1;
+        }
+        applyScale();
+      }
+
+      function updateZoom() {
+        applyScale();
       }
 
       function populateSoundFontPrograms() {
@@ -790,7 +845,7 @@
           const ctx = ensureAudioContext();
           const synth = new window.JSSynth.Synthesizer();
           synth.init(ctx.sampleRate, { initialGain: 0.7, midiChannelCount: 16 });
-          const node = synth.createAudioNode(ctx, 4096);
+          const node = synth.createAudioNode(ctx, 512);
           node.connect(master);
           sf.synth = synth;
           sf.node = node;
@@ -900,6 +955,9 @@
 
       function soundFontNoteOn(midiNote, velocity) {
         if (!soundFontEnabled || !sf.ready || !sf.synth) return;
+        if (audioCtx && audioCtx.state === "suspended") {
+          audioCtx.resume();
+        }
         const v = Math.max(1, Math.min(127, Math.round(velocity)));
         sf.synth.midiNoteOn(0, midiNote, v);
       }
@@ -1007,6 +1065,7 @@
 
             const key = row.keys[fretIndex];
             if (key) {
+              fretEl.dataset.code = key.code;
               neckCellsByCode.set(key.code, fretEl);
             }
           }
@@ -1128,10 +1187,30 @@
         }
       }
 
+      function isNoteHeld(midiNote) {
+        for (const value of activeNotes.values()) {
+          if (value === midiNote) return true;
+        }
+        for (const data of pointerNotes.values()) {
+          if (data.midiNote === midiNote) return true;
+        }
+        return false;
+      }
+
+      function releaseSustainedNotes() {
+        sustainedNotes.forEach((midiNote) => {
+          if (!isNoteHeld(midiNote)) {
+            sendMidi([0x80, midiNote, 0x00]);
+            soundFontNoteOff(midiNote);
+          }
+        });
+        sustainedNotes.clear();
+      }
+
       function handleKeyDown(event) {
         setCapsLockState(event.getModifierState("CapsLock"));
 
-        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space", "Tab"].includes(event.code)) {
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space", "Tab", "Delete", "Backspace", "Enter", "NumpadEnter"].includes(event.code)) {
           event.preventDefault();
         }
 
@@ -1161,10 +1240,17 @@
           return;
         }
 
-        if (event.code === "Space") {
+        if (event.code === "Enter" || event.code === "NumpadEnter") {
           vibratoActive = true;
           if (pitchMode === "center") {
             startVibrato();
+          }
+          return;
+        }
+
+        if (event.code === "Space") {
+          if (!event.repeat) {
+            sustainActive = true;
           }
           return;
         }
@@ -1178,6 +1264,13 @@
         if (event.code === "Tab") {
           noteVelocity = Math.max(1, noteVelocity - velocityStep);
           updateVelocityDisplay();
+          return;
+        }
+
+        if (event.code === "Delete" || event.code === "Backspace") {
+          if (!event.repeat) {
+            toggleSlantMode();
+          }
           return;
         }
 
@@ -1218,9 +1311,15 @@
           return;
         }
 
-        if (event.code === "Space") {
+        if (event.code === "Enter" || event.code === "NumpadEnter") {
           vibratoActive = false;
           stopVibrato();
+          return;
+        }
+
+        if (event.code === "Space") {
+          sustainActive = false;
+          releaseSustainedNotes();
           return;
         }
 
@@ -1235,8 +1334,41 @@
         if (neckCell) {
           neckCell.classList.remove("active");
         }
-        sendMidi([0x80, midiNote, 0x00]);
-        soundFontNoteOff(midiNote);
+        if (sustainActive) {
+          sustainedNotes.add(midiNote);
+        } else {
+          sendMidi([0x80, midiNote, 0x00]);
+          soundFontNoteOff(midiNote);
+        }
+      }
+
+      function handlePointerDown(event) {
+        const target = event.target.closest(".fret, .neck-fret");
+        if (!target || event.button !== 0) return;
+        const midiNote = Number(target.dataset.note);
+        if (!Number.isFinite(midiNote)) return;
+        event.preventDefault();
+        pointerNotes.set(event.pointerId, { midiNote, cell: target, code: target.dataset.code || "" });
+        target.setPointerCapture?.(event.pointerId);
+        target.classList.add("active");
+        sendMidi([0x90, midiNote, noteVelocity]);
+        soundFontNoteOn(midiNote, noteVelocity);
+      }
+
+      function handlePointerUp(event) {
+        const data = pointerNotes.get(event.pointerId);
+        if (!data) return;
+        pointerNotes.delete(event.pointerId);
+        if (data.code && activeNotes.has(data.code)) {
+          return;
+        }
+        data.cell.classList.remove("active");
+        if (sustainActive) {
+          sustainedNotes.add(data.midiNote);
+        } else {
+          sendMidi([0x80, data.midiNote, 0x00]);
+          soundFontNoteOff(data.midiNote);
+        }
       }
 
       function refreshMidiOutputs() {
@@ -1300,6 +1432,17 @@
         neckView.classList.toggle("hidden", showClassic);
         modeClassic.setAttribute("aria-pressed", String(showClassic));
         modeNeck.setAttribute("aria-pressed", String(!showClassic));
+        updateAutoScale();
+      }
+
+      function setSlantEnabled(enabled) {
+        fretboard.classList.toggle("slanted", enabled);
+        classicMarkersRow.classList.toggle("slanted", enabled);
+        toggleSlant.setAttribute("aria-pressed", String(enabled));
+      }
+
+      function toggleSlantMode() {
+        setSlantEnabled(!fretboard.classList.contains("slanted"));
       }
 
       modeClassic.addEventListener("click", () => {
@@ -1311,9 +1454,7 @@
       });
 
       toggleSlant.addEventListener("click", () => {
-        const isActive = fretboard.classList.toggle("slanted");
-        classicMarkersRow.classList.toggle("slanted", isActive);
-        toggleSlant.setAttribute("aria-pressed", String(isActive));
+        toggleSlantMode();
       });
 
       soundFontToggle.addEventListener("click", () => {
@@ -1329,6 +1470,10 @@
         updateBendRange();
       });
 
+      zoomRange.addEventListener("input", () => {
+        updateZoom();
+      });
+
       vibratoRate.addEventListener("input", () => {
         vibratoValue.textContent = `${vibratoRate.value} Hz`;
         if (vibratoActive && pitchMode === "center") {
@@ -1339,6 +1484,12 @@
 
       window.addEventListener("keydown", handleKeyDown);
       window.addEventListener("keyup", handleKeyUp);
+      window.addEventListener("pointerup", handlePointerUp);
+      window.addEventListener("pointercancel", handlePointerUp);
+      window.addEventListener("resize", updateAutoScale);
+      fretboard.addEventListener("pointerdown", handlePointerDown);
+      neck.addEventListener("pointerdown", handlePointerDown);
+      settings.addEventListener("toggle", updateAutoScale);
 
       populateSoundFontPrograms();
       renderFretboard();
@@ -1346,6 +1497,8 @@
       updateTuningDisplay();
       updateVelocityDisplay();
       updateBendRange();
+      updateAutoScale();
+      updateZoom();
       setView("classic");
       initMidi();
     </script>
