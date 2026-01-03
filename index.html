@@ -3,13 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Qwerty Fretboard MIDI</title>
+    <title>Qwerty Fretboard</title>
     <style>
       :root {
         color-scheme: dark;
-        font-family: "Inter", "Segoe UI", system-ui, sans-serif;
-        background: #050505;
+        font-family: "Avenir Next", "Futura", "Trebuchet MS", sans-serif;
         color: #f5f5f5;
+        --bg: #050505;
+        --panel: #0c0c0c;
+        --panel-strong: #111111;
+        --border: #1f1f1f;
+        --text-muted: #9a9a9a;
+        --text-soft: #bdbdbd;
+        --accent: #ffffff;
+        --glow: rgba(255, 255, 255, 0.08);
       }
 
       * {
@@ -23,15 +30,16 @@
         justify-content: center;
         align-items: center;
         padding: 20px;
-        background: #050505;
+        background: radial-gradient(circle at top, #171717, var(--bg) 55%);
       }
 
       main {
         width: min(980px, 100%);
-        background: #0b0b0b;
-        border: 1px solid #1e1e1e;
+        background: var(--panel);
+        border: 1px solid var(--border);
         border-radius: 18px;
         padding: 24px;
+        box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
       }
 
       header {
@@ -45,36 +53,31 @@
         margin: 0 0 6px;
         font-size: 1.6rem;
         font-weight: 600;
-      }
-
-      p {
-        margin: 0;
-        color: #b8b8b8;
-        font-size: 0.95rem;
+        letter-spacing: 0.02em;
       }
 
       .controls {
         display: grid;
         gap: 10px;
         padding: 12px;
-        border: 1px solid #1f1f1f;
+        border: 1px solid var(--border);
         border-radius: 12px;
-        background: #0f0f0f;
+        background: var(--panel-strong);
         min-width: 250px;
       }
 
       label {
         font-size: 0.8rem;
-        color: #bdbdbd;
+        color: var(--text-soft);
       }
 
       select,
       button,
       input[type="range"] {
         width: 100%;
-        background: #070707;
+        background: #0a0a0a;
         border: 1px solid #262626;
-        color: #f5f5f5;
+        color: var(--accent);
         padding: 8px 10px;
         border-radius: 8px;
         font-size: 0.9rem;
@@ -82,10 +85,17 @@
 
       button {
         cursor: pointer;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
       }
 
       button:hover {
-        border-color: #ffffff;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px var(--glow);
+      }
+
+      button[aria-pressed="true"] {
+        border-color: var(--accent);
+        background: #141414;
       }
 
       .status {
@@ -126,6 +136,7 @@
         grid-auto-flow: column;
         grid-auto-columns: minmax(38px, 1fr);
         gap: 8px;
+        transition: transform 0.15s ease;
       }
 
       .fret {
@@ -135,7 +146,7 @@
         text-align: center;
         border: 1px solid #1a1a1a;
         font-size: 0.75rem;
-        color: #bdbdbd;
+        color: var(--text-soft);
         display: grid;
         gap: 2px;
         min-height: 44px;
@@ -152,14 +163,6 @@
         background: #1a1a1a;
       }
 
-      .legend {
-        margin-top: 16px;
-        font-size: 0.8rem;
-        color: #9a9a9a;
-        display: grid;
-        gap: 6px;
-      }
-
       .hidden {
         display: none;
       }
@@ -168,7 +171,7 @@
         position: relative;
         padding: 20px 10px 10px 10px;
         background: #0d0d0d;
-        border: 1px solid #1a1a1a;
+        border: 1px solid var(--border);
         border-radius: 12px;
         overflow: hidden;
       }
@@ -176,14 +179,15 @@
       .neck {
         display: grid;
         gap: 10px;
-        transform: skewX(-8deg);
+        margin-bottom: 8px;
       }
 
       .neck-string {
         display: grid;
-        grid-template-columns: repeat(11, 1fr);
+        grid-template-columns: repeat(var(--fret-count), 1fr);
         gap: 6px;
         align-items: center;
+        margin-left: var(--row-offset, 0px);
       }
 
       .neck-fret {
@@ -192,6 +196,11 @@
         border-left: 1px solid #1f1f1f;
         border-right: 1px solid #1f1f1f;
         background: #0a0a0a;
+      }
+
+      .neck-fret.open {
+        border-left: 3px solid #2a2a2a;
+        background: #0c0c0c;
       }
 
       .neck-fret.marker::after {
@@ -221,13 +230,28 @@
       }
 
       .edge-labels {
-        margin-top: 10px;
+        margin-top: 6px;
         display: grid;
-        grid-template-columns: repeat(11, 1fr);
+        grid-template-columns: repeat(var(--fret-count), 1fr);
         gap: 6px;
-        font-size: 0.7rem;
-        color: #6f6f6f;
-        text-align: center;
+        height: 8px;
+      }
+
+      .edge-labels div {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .edge-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: #262626;
+      }
+
+      .fretboard.slanted .string-row .frets {
+        transform: translateX(var(--row-offset, 0px));
       }
 
       .range-row {
@@ -245,25 +269,25 @@
     <main>
       <header>
         <div>
-          <h1>Qwerty Fretboard MIDI</h1>
-          <p>Play guitar-style notes on your keyboard. Caps Lock switches to high strings.</p>
+          <h1>Qwerty Fretboard</h1>
         </div>
         <div class="controls">
           <div>
-            <label for="midi-output">MIDI Output</label>
+            <label for="midi-output">Output</label>
             <select id="midi-output"></select>
           </div>
-          <button id="refresh-midi" type="button">Refresh MIDI Devices</button>
+          <button id="refresh-midi" type="button">Refresh</button>
           <div class="range-row">
-            <label for="vibrato-rate">Vibrato rate</label>
+            <label for="vibrato-rate">Vibrato</label>
             <input id="vibrato-rate" type="range" min="2" max="12" value="6" step="1" />
             <span id="vibrato-value">6 Hz</span>
           </div>
           <div class="toggle">
-            <button id="mode-classic" type="button">Classic view</button>
-            <button id="mode-neck" type="button">Neck view</button>
+            <button id="mode-classic" type="button" aria-pressed="true">Classic</button>
+            <button id="mode-neck" type="button" aria-pressed="false">Neck</button>
           </div>
-          <div class="status" id="midi-status">MIDI not connected.</div>
+          <button id="toggle-slant" type="button" aria-pressed="false">Keyboard slant</button>
+          <div class="status" id="midi-status">MIDI: not connected.</div>
         </div>
       </header>
 
@@ -275,13 +299,6 @@
           <div class="edge-labels" id="edge-labels"></div>
         </div>
       </section>
-
-      <div class="legend">
-        <div>Rows: Z-/ (Low E), A-' (A), Q-[ (D), 1-- (G)</div>
-        <div>Caps Lock: 1-- (High e), Q-[ (B), A-' (G), Z-/ (D)</div>
-        <div>Arrows: Left/Right pitch bend, Up/Down octave transpose</div>
-        <div>Space: Vibrato (rate adjustable)</div>
-      </div>
     </main>
 
     <script>
@@ -357,17 +374,17 @@
       ];
 
       const tuningNormal = [
-        { name: "G string", base: 55 },
-        { name: "D string", base: 50 },
-        { name: "A string", base: 45 },
-        { name: "Low E string", base: 40 },
+        { name: "G", base: 55 },
+        { name: "D", base: 50 },
+        { name: "A", base: 45 },
+        { name: "E", base: 40 },
       ];
 
       const tuningCaps = [
-        { name: "High e string", base: 64 },
-        { name: "B string", base: 59 },
-        { name: "G string", base: 55 },
-        { name: "D string", base: 50 },
+        { name: "e", base: 64 },
+        { name: "B", base: 59 },
+        { name: "G", base: 55 },
+        { name: "D", base: 50 },
       ];
 
       const midiOutputSelect = document.getElementById("midi-output");
@@ -379,6 +396,7 @@
       const edgeLabels = document.getElementById("edge-labels");
       const modeClassic = document.getElementById("mode-classic");
       const modeNeck = document.getElementById("mode-neck");
+      const toggleSlant = document.getElementById("toggle-slant");
       const vibratoRate = document.getElementById("vibrato-rate");
       const vibratoValue = document.getElementById("vibrato-value");
 
@@ -395,6 +413,8 @@
       const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
       const cellsByCode = new Map();
       const neckCells = new Map();
+      const neckCellsByCode = new Map();
+      const rowOffsetStep = 14;
 
       function getNoteName(midiNote) {
         const octave = Math.floor(midiNote / 12) - 1;
@@ -406,9 +426,10 @@
         fretboard.innerHTML = "";
         cellsByCode.clear();
 
-        rowDefinitions.forEach((row) => {
+        rowDefinitions.forEach((row, rowIndex) => {
           const rowEl = document.createElement("div");
           rowEl.className = "string-row";
+          rowEl.style.setProperty("--row-offset", `${rowIndex * rowOffsetStep}px`);
 
           const labelEl = document.createElement("div");
           labelEl.className = "string-label";
@@ -437,16 +458,25 @@
         neck.innerHTML = "";
         edgeLabels.innerHTML = "";
         neckCells.clear();
+        neckCellsByCode.clear();
 
-        const fretCount = 11;
+        const fretCount = rowDefinitions[0].keys.length;
         const markerFrets = new Set([3, 5, 7, 9]);
+        neck.style.setProperty("--fret-count", fretCount);
+        edgeLabels.style.setProperty("--fret-count", fretCount);
 
-        for (let stringIndex = 0; stringIndex < 4; stringIndex += 1) {
+        rowDefinitions.forEach((row, rowIndex) => {
           const stringRow = document.createElement("div");
           stringRow.className = "neck-string";
-          for (let fretIndex = 1; fretIndex <= fretCount; fretIndex += 1) {
+          stringRow.style.setProperty("--row-offset", `${rowIndex * rowOffsetStep}px`);
+
+          for (let fretIndex = 0; fretIndex < fretCount; fretIndex += 1) {
             const fretEl = document.createElement("div");
             fretEl.className = "neck-fret";
+            fretEl.dataset.fret = fretIndex;
+            if (fretIndex === 0) {
+              fretEl.classList.add("open");
+            }
             if (markerFrets.has(fretIndex)) {
               fretEl.classList.add("marker");
             }
@@ -454,28 +484,38 @@
             noteDot.className = "note-dot";
             fretEl.appendChild(noteDot);
             stringRow.appendChild(fretEl);
-            neckCells.set(`${stringIndex}-${fretIndex}`, { fretEl, noteDot });
+            neckCells.set(`${rowIndex}-${fretIndex}`, { fretEl, noteDot });
+
+            const key = row.keys[fretIndex];
+            if (key) {
+              neckCellsByCode.set(key.code, fretEl);
+            }
           }
           neck.appendChild(stringRow);
-        }
-
-        const lowELabels = rowDefinitions[3].keys.slice(0, fretCount).map((key) => key.label);
-        lowELabels.forEach((label) => {
-          const labelEl = document.createElement("div");
-          labelEl.textContent = label;
-          edgeLabels.appendChild(labelEl);
         });
+
+        for (let fretIndex = 0; fretIndex < fretCount; fretIndex += 1) {
+          const marker = document.createElement("div");
+          if (markerFrets.has(fretIndex)) {
+            const dot = document.createElement("div");
+            dot.className = "edge-dot";
+            marker.appendChild(dot);
+          }
+          edgeLabels.appendChild(marker);
+        }
       }
 
       function updateTuningDisplay() {
         const tuning = capsLockOn ? tuningCaps : tuningNormal;
         const rows = fretboard.querySelectorAll(".string-row");
+        const transposeLabel =
+          octaveTranspose === 0 ? "" : ` ${octaveTranspose >= 0 ? "+" : ""}${octaveTranspose}`;
 
         rows.forEach((rowEl, rowIndex) => {
           const labelEl = rowEl.querySelector(".string-label");
           const frets = rowEl.querySelectorAll(".fret");
           const stringInfo = tuning[rowIndex];
-          labelEl.textContent = `${stringInfo.name} (${octaveTranspose >= 0 ? "+" : ""}${octaveTranspose})`;
+          labelEl.textContent = `${stringInfo.name}${transposeLabel}`;
 
           frets.forEach((fretEl) => {
             const fretNumber = Number(fretEl.dataset.fret);
@@ -491,10 +531,10 @@
 
       function updateNeckNotes() {
         const tuning = capsLockOn ? tuningCaps : tuningNormal;
-        const fretCount = 11;
+        const fretCount = rowDefinitions[0].keys.length;
 
         for (let stringIndex = 0; stringIndex < tuning.length; stringIndex += 1) {
-          for (let fretIndex = 1; fretIndex <= fretCount; fretIndex += 1) {
+          for (let fretIndex = 0; fretIndex < fretCount; fretIndex += 1) {
             const midiNote = tuning[stringIndex].base + fretIndex + octaveTranspose * 12;
             const cell = neckCells.get(`${stringIndex}-${fretIndex}`);
             if (!cell) continue;
@@ -593,7 +633,7 @@
         const midiNote = Number(cell.dataset.note);
         activeNotes.set(event.code, midiNote);
         cell.classList.add("active");
-        const neckCell = findNeckCell(midiNote);
+        const neckCell = neckCellsByCode.get(event.code);
         if (neckCell) {
           neckCell.classList.add("active");
         }
@@ -636,33 +676,23 @@
         if (cell) {
           cell.classList.remove("active");
         }
-        const neckCell = findNeckCell(midiNote);
+        const neckCell = neckCellsByCode.get(event.code);
         if (neckCell) {
           neckCell.classList.remove("active");
         }
         sendMidi([0x80, midiNote, 0x00]);
       }
 
-      function findNeckCell(midiNote) {
-        for (const [key, value] of neckCells.entries()) {
-          const { fretEl } = value;
-          if (Number(fretEl.dataset.note) === midiNote) {
-            return fretEl;
-          }
-        }
-        return null;
-      }
-
       function refreshMidiOutputs() {
         midiOutputSelect.innerHTML = "";
         if (!midiAccess) {
-          midiStatus.textContent = "MIDI not supported in this browser.";
+          midiStatus.textContent = "MIDI: not supported.";
           return;
         }
 
         const outputs = Array.from(midiAccess.outputs.values());
         if (!outputs.length) {
-          midiStatus.textContent = "No MIDI outputs found.";
+          midiStatus.textContent = "MIDI: no outputs.";
           return;
         }
 
@@ -675,21 +705,21 @@
 
         midiOutputSelect.selectedIndex = 0;
         midiOutput = outputs[0];
-        midiStatus.textContent = `Connected to ${midiOutput.name || "MIDI output"}.`;
+        midiStatus.textContent = `MIDI: ${midiOutput.name || "connected"}.`;
       }
 
       async function initMidi() {
         if (!navigator.requestMIDIAccess) {
-          midiStatus.textContent = "Web MIDI API not available.";
+          midiStatus.textContent = "MIDI: unavailable.";
           return;
         }
 
         try {
           midiAccess = await navigator.requestMIDIAccess();
-          midiStatus.textContent = "MIDI ready. Select an output.";
+          midiStatus.textContent = "MIDI: ready.";
           refreshMidiOutputs();
         } catch (error) {
-          midiStatus.textContent = "Failed to access MIDI. Allow permissions.";
+          midiStatus.textContent = "MIDI: blocked.";
         }
       }
 
@@ -697,22 +727,33 @@
         const outputId = event.target.value;
         midiOutput = midiAccess?.outputs.get(outputId) || null;
         midiStatus.textContent = midiOutput
-          ? `Connected to ${midiOutput.name || "MIDI output"}.`
-          : "Select a MIDI output.";
+          ? `MIDI: ${midiOutput.name || "connected"}.`
+          : "MIDI: choose output.";
       });
 
       refreshButton.addEventListener("click", () => {
         refreshMidiOutputs();
       });
 
+      function setView(view) {
+        const showClassic = view === "classic";
+        fretboard.classList.toggle("hidden", !showClassic);
+        neckView.classList.toggle("hidden", showClassic);
+        modeClassic.setAttribute("aria-pressed", String(showClassic));
+        modeNeck.setAttribute("aria-pressed", String(!showClassic));
+      }
+
       modeClassic.addEventListener("click", () => {
-        fretboard.classList.remove("hidden");
-        neckView.classList.add("hidden");
+        setView("classic");
       });
 
       modeNeck.addEventListener("click", () => {
-        fretboard.classList.add("hidden");
-        neckView.classList.remove("hidden");
+        setView("neck");
+      });
+
+      toggleSlant.addEventListener("click", () => {
+        const isActive = fretboard.classList.toggle("slanted");
+        toggleSlant.setAttribute("aria-pressed", String(isActive));
       });
 
       vibratoRate.addEventListener("input", () => {
@@ -729,6 +770,7 @@
       renderFretboard();
       renderNeckView();
       updateTuningDisplay();
+      setView("classic");
       initMidi();
     </script>
   </body>
