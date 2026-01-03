@@ -56,6 +56,39 @@
         letter-spacing: 0.02em;
       }
 
+      .settings {
+        position: relative;
+      }
+
+      .settings summary {
+        list-style: none;
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: var(--panel-strong);
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        font-size: 1.1rem;
+      }
+
+      .settings summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .settings[open] summary {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px var(--glow);
+      }
+
+      .settings .controls {
+        position: absolute;
+        right: 0;
+        top: 46px;
+        z-index: 5;
+      }
+
       .controls {
         display: grid;
         gap: 10px;
@@ -163,6 +196,39 @@
         background: #1a1a1a;
       }
 
+      .classic-markers {
+        margin-top: 8px;
+        display: grid;
+        grid-template-columns: 90px 1fr;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .classic-markers-row {
+        display: grid;
+        grid-template-columns: repeat(var(--fret-count), 1fr);
+        gap: 8px;
+        height: 10px;
+        transition: transform 0.15s ease;
+      }
+
+      .classic-markers-row span {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: #262626;
+        opacity: 0;
+        justify-self: center;
+      }
+
+      .classic-markers-row span.marker-dot {
+        opacity: 1;
+      }
+
+      .classic-markers-row.slanted {
+        transform: translateX(var(--row-offset, 0px));
+      }
+
       .hidden {
         display: none;
       }
@@ -234,20 +300,18 @@
         display: grid;
         grid-template-columns: repeat(var(--fret-count), 1fr);
         gap: 6px;
-        height: 8px;
+        height: 12px;
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        text-align: center;
+        letter-spacing: 0.08em;
+        transform: translateX(var(--edge-offset, 0px));
       }
 
       .edge-labels div {
         display: flex;
         align-items: center;
         justify-content: center;
-      }
-
-      .edge-dot {
-        width: 6px;
-        height: 6px;
-        border-radius: 999px;
-        background: #262626;
       }
 
       .fretboard.slanted .string-row .frets {
@@ -271,27 +335,42 @@
         <div>
           <h1>Qwerty Fretboard</h1>
         </div>
-        <div class="controls">
-          <div>
-            <label for="midi-output">Output</label>
-            <select id="midi-output"></select>
+        <details class="settings" id="settings">
+          <summary aria-label="Settings">⚙️</summary>
+          <div class="controls">
+            <div>
+              <label for="midi-output">Output</label>
+              <select id="midi-output"></select>
+            </div>
+            <button id="refresh-midi" type="button">Refresh</button>
+            <div class="range-row">
+              <label for="vibrato-rate">Vibrato</label>
+              <input id="vibrato-rate" type="range" min="2" max="12" value="6" step="1" />
+              <span id="vibrato-value">6 Hz</span>
+            </div>
+            <div>
+              <label for="bend-range">Bend</label>
+              <select id="bend-range">
+                <option value="8192" selected>Whole</option>
+                <option value="4096">Half</option>
+                <option value="2048">Quarter</option>
+              </select>
+            </div>
+            <div class="toggle">
+              <button id="mode-classic" type="button" aria-pressed="true">Classic</button>
+              <button id="mode-neck" type="button" aria-pressed="false">Neck</button>
+            </div>
+            <button id="toggle-slant" type="button" aria-pressed="false">Slant</button>
+            <div class="status" id="midi-status">MIDI: not connected.</div>
           </div>
-          <button id="refresh-midi" type="button">Refresh</button>
-          <div class="range-row">
-            <label for="vibrato-rate">Vibrato</label>
-            <input id="vibrato-rate" type="range" min="2" max="12" value="6" step="1" />
-            <span id="vibrato-value">6 Hz</span>
-          </div>
-          <div class="toggle">
-            <button id="mode-classic" type="button" aria-pressed="true">Classic</button>
-            <button id="mode-neck" type="button" aria-pressed="false">Neck</button>
-          </div>
-          <button id="toggle-slant" type="button" aria-pressed="false">Keyboard slant</button>
-          <div class="status" id="midi-status">MIDI: not connected.</div>
-        </div>
+        </details>
       </header>
 
       <section class="fretboard" id="fretboard"></section>
+      <div class="classic-markers" id="classic-markers">
+        <div class="string-label"></div>
+        <div class="classic-markers-row" id="classic-markers-row"></div>
+      </div>
 
       <section class="neck-view hidden" id="neck-view">
         <div class="neck-wrap">
@@ -391,12 +470,15 @@
       const midiStatus = document.getElementById("midi-status");
       const refreshButton = document.getElementById("refresh-midi");
       const fretboard = document.getElementById("fretboard");
+      const classicMarkers = document.getElementById("classic-markers");
+      const classicMarkersRow = document.getElementById("classic-markers-row");
       const neckView = document.getElementById("neck-view");
       const neck = document.getElementById("neck");
       const edgeLabels = document.getElementById("edge-labels");
       const modeClassic = document.getElementById("mode-classic");
       const modeNeck = document.getElementById("mode-neck");
       const toggleSlant = document.getElementById("toggle-slant");
+      const bendRangeSelect = document.getElementById("bend-range");
       const vibratoRate = document.getElementById("vibrato-rate");
       const vibratoValue = document.getElementById("vibrato-value");
 
@@ -408,6 +490,8 @@
       let vibratoActive = false;
       let vibratoTimer = null;
       let vibratoPhase = 0;
+      let bendRange = Number(bendRangeSelect.value);
+      let noteVelocity = 100;
       const activeNotes = new Map();
 
       const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -415,6 +499,11 @@
       const neckCells = new Map();
       const neckCellsByCode = new Map();
       const rowOffsetStep = 14;
+      const velocityStep = 5;
+      const markerFrets = [3, 5, 7, 9];
+      const markerSymbols = ["V", "N", "<", "?"];
+      const markerFretSet = new Set(markerFrets);
+      const markerLabelMap = new Map(markerFrets.map((fret, index) => [fret, markerSymbols[index]]));
 
       function getNoteName(midiNote) {
         const octave = Math.floor(midiNote / 12) - 1;
@@ -452,6 +541,20 @@
           rowEl.appendChild(fretsEl);
           fretboard.appendChild(rowEl);
         });
+
+        const fretCount = rowDefinitions[0].keys.length;
+        const bottomOffset = (rowDefinitions.length - 1) * rowOffsetStep;
+        classicMarkersRow.innerHTML = "";
+        classicMarkersRow.style.setProperty("--fret-count", fretCount);
+        classicMarkersRow.style.setProperty("--row-offset", `${bottomOffset}px`);
+
+        for (let fretIndex = 0; fretIndex < fretCount; fretIndex += 1) {
+          const marker = document.createElement("span");
+          if (markerFretSet.has(fretIndex)) {
+            marker.classList.add("marker-dot");
+          }
+          classicMarkersRow.appendChild(marker);
+        }
       }
 
       function renderNeckView() {
@@ -461,9 +564,11 @@
         neckCellsByCode.clear();
 
         const fretCount = rowDefinitions[0].keys.length;
-        const markerFrets = new Set([3, 5, 7, 9]);
+        const bottomOffset = (rowDefinitions.length - 1) * rowOffsetStep;
+        const markerFretsSet = new Set(markerFrets);
         neck.style.setProperty("--fret-count", fretCount);
         edgeLabels.style.setProperty("--fret-count", fretCount);
+        edgeLabels.style.setProperty("--edge-offset", `${bottomOffset}px`);
 
         rowDefinitions.forEach((row, rowIndex) => {
           const stringRow = document.createElement("div");
@@ -477,7 +582,7 @@
             if (fretIndex === 0) {
               fretEl.classList.add("open");
             }
-            if (markerFrets.has(fretIndex)) {
+            if (markerFretsSet.has(fretIndex)) {
               fretEl.classList.add("marker");
             }
             const noteDot = document.createElement("div");
@@ -496,10 +601,9 @@
 
         for (let fretIndex = 0; fretIndex < fretCount; fretIndex += 1) {
           const marker = document.createElement("div");
-          if (markerFrets.has(fretIndex)) {
-            const dot = document.createElement("div");
-            dot.className = "edge-dot";
-            marker.appendChild(dot);
+          const markerLabel = markerLabelMap.get(fretIndex);
+          if (markerLabel) {
+            marker.textContent = markerLabel;
           }
           edgeLabels.appendChild(marker);
         }
@@ -578,10 +682,11 @@
       function startVibrato() {
         if (vibratoTimer) return;
         const rate = Number(vibratoRate.value);
+        const depth = Math.round(bendRange * 0.27);
         vibratoTimer = setInterval(() => {
           if (pitchMode !== "center") return;
           vibratoPhase += (rate / 60) * Math.PI * 2;
-          const bendAmount = Math.round(Math.sin(vibratoPhase) * 2200);
+          const bendAmount = Math.round(Math.sin(vibratoPhase) * depth);
           sendPitchBend(8192 + bendAmount);
         }, 16);
       }
@@ -589,21 +694,21 @@
       function handleKeyDown(event) {
         setCapsLockState(event.getModifierState("CapsLock"));
 
-        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space"].includes(event.code)) {
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space", "Tab"].includes(event.code)) {
           event.preventDefault();
         }
 
         if (event.code === "ArrowLeft" && pitchMode !== "left") {
           pitchMode = "left";
           stopVibrato();
-          sendPitchBend(0);
+          sendPitchBend(8192 - bendRange);
           return;
         }
 
         if (event.code === "ArrowRight" && pitchMode !== "right") {
           pitchMode = "right";
           stopVibrato();
-          sendPitchBend(16383);
+          sendPitchBend(8192 + bendRange);
           return;
         }
 
@@ -627,6 +732,16 @@
           return;
         }
 
+        if (event.code === "Backquote") {
+          noteVelocity = Math.min(127, noteVelocity + velocityStep);
+          return;
+        }
+
+        if (event.code === "Tab") {
+          noteVelocity = Math.max(1, noteVelocity - velocityStep);
+          return;
+        }
+
         const cell = cellsByCode.get(event.code);
         if (!cell || event.repeat) return;
 
@@ -637,7 +752,7 @@
         if (neckCell) {
           neckCell.classList.add("active");
         }
-        sendMidi([0x90, midiNote, 0x64]);
+        sendMidi([0x90, midiNote, noteVelocity]);
       }
 
       function handleKeyUp(event) {
@@ -738,6 +853,7 @@
       function setView(view) {
         const showClassic = view === "classic";
         fretboard.classList.toggle("hidden", !showClassic);
+        classicMarkers.classList.toggle("hidden", !showClassic);
         neckView.classList.toggle("hidden", showClassic);
         modeClassic.setAttribute("aria-pressed", String(showClassic));
         modeNeck.setAttribute("aria-pressed", String(!showClassic));
@@ -753,7 +869,21 @@
 
       toggleSlant.addEventListener("click", () => {
         const isActive = fretboard.classList.toggle("slanted");
+        classicMarkersRow.classList.toggle("slanted", isActive);
         toggleSlant.setAttribute("aria-pressed", String(isActive));
+      });
+
+      bendRangeSelect.addEventListener("change", () => {
+        bendRange = Number(bendRangeSelect.value);
+        if (pitchMode === "left") {
+          sendPitchBend(8192 - bendRange);
+        } else if (pitchMode === "right") {
+          sendPitchBend(8192 + bendRange);
+        }
+        if (vibratoActive && pitchMode === "center") {
+          stopVibrato();
+          startVibrato();
+        }
       });
 
       vibratoRate.addEventListener("input", () => {
