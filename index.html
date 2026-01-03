@@ -77,6 +77,59 @@
         flex-wrap: wrap;
       }
 
+      .title-actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 6px;
+        flex-wrap: wrap;
+      }
+
+      .title-actions button {
+        width: auto;
+      }
+
+      .title-buttons {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .velocity-control {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .velocity-control input[type="range"] {
+        width: 140px;
+      }
+
+      .quick-toggle {
+        display: grid;
+        gap: 2px;
+        padding: 6px 10px;
+        font-size: 0.85rem;
+        text-align: left;
+      }
+
+      .quick-toggle small {
+        font-size: 0.6rem;
+        color: var(--text-muted);
+        letter-spacing: 0.04em;
+      }
+
+      .transpose-buttons {
+        display: flex;
+        gap: 6px;
+      }
+
+      .transpose-buttons button {
+        width: 36px;
+        padding: 6px 0;
+      }
+
       .velocity-pill {
         font-size: 0.72rem;
         color: var(--text-soft);
@@ -120,14 +173,46 @@
         z-index: 5;
       }
 
+      .settings[open] .controls {
+        position: fixed;
+        left: 20px;
+        right: 20px;
+        top: 72px;
+        bottom: 20px;
+        max-width: none;
+        min-width: 0;
+        overflow: auto;
+      }
+
       .controls {
         display: grid;
+        grid-template-columns: 1fr;
         gap: 10px;
         padding: 12px;
         border: 1px solid var(--border);
         border-radius: 12px;
         background: var(--panel-strong);
         min-width: 260px;
+      }
+
+      .settings[open] .controls {
+        grid-template-columns: repeat(3, minmax(180px, 1fr));
+        gap: 12px 16px;
+      }
+
+      .controls .full-row,
+      .controls .key-map,
+      .controls .status {
+        grid-column: 1 / -1;
+      }
+
+      .close-row {
+        display: flex;
+        justify-content: flex-end;
+      }
+
+      .close-row button {
+        width: auto;
       }
 
       label {
@@ -174,13 +259,30 @@
 
       .key-map {
         display: grid;
-        gap: 4px;
+        grid-template-columns: repeat(2, minmax(200px, 1fr));
+        gap: 12px 18px;
         font-size: 0.72rem;
         color: var(--text-muted);
-        line-height: 1.3;
+        line-height: 1.35;
       }
 
-      .key-map span {
+      .key-map-group {
+        display: grid;
+        gap: 6px;
+        padding: 8px 10px;
+        border: 1px solid #1b1b1b;
+        border-radius: 10px;
+        background: #101010;
+      }
+
+      .key-map-title {
+        font-size: 0.75rem;
+        color: var(--text-soft);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .key-map-row span {
         color: var(--text-soft);
         font-weight: 600;
       }
@@ -410,12 +512,32 @@
         <div>
           <div class="title-row">
             <h1>Qwerty Fretboard</h1>
-            <div class="velocity-pill" id="velocity-display">Vel 100</div>
+          </div>
+          <div class="title-actions">
+            <div class="title-buttons">
+              <button id="caps-toggle" class="quick-toggle" type="button" aria-pressed="false">
+                Hi / Lo
+              </button>
+              <button id="sustain-toggle" class="quick-toggle" type="button" aria-pressed="false">
+                Sustain
+              </button>
+              <div class="transpose-buttons">
+                <button id="transpose-down" type="button" aria-label="Transpose down">-</button>
+                <button id="transpose-up" type="button" aria-label="Transpose up">+</button>
+              </div>
+            </div>
+            <div class="velocity-control">
+              <div class="velocity-pill" id="velocity-display">Vel 100</div>
+              <input id="velocity-slider" type="range" min="1" max="127" value="100" step="1" />
+            </div>
           </div>
         </div>
         <details class="settings" id="settings">
           <summary aria-label="Settings">⚙️</summary>
           <div class="controls">
+            <div class="close-row full-row">
+              <button id="close-settings" type="button">Close</button>
+            </div>
             <div>
               <label for="midi-output">Output</label>
               <select id="midi-output"></select>
@@ -456,13 +578,23 @@
             <div class="status" id="soundfont-status">Soundfont: off.</div>
             <div class="status" id="midi-status">MIDI: not connected.</div>
             <div class="key-map">
-              <div><span>1:</span> 1 2 3 4 5 6 7 8 9 0 -</div>
-              <div><span>Q:</span> Q W E R T Y U I O P [</div>
-              <div><span>A:</span> A S D F G H J K L ; '</div>
-              <div><span>Z:</span> Z X C V B N M , . / Shift</div>
-              <div>
-                <span>Other:</span> Caps = high strings, Arrows = bend/transpose, Enter = vibrato, Space = sustain,
-                ` / Tab = velocity, Delete/Backspace = slant
+              <div class="key-map-group">
+                <div class="key-map-title">Strings</div>
+                <div class="key-map-row"><span>1 row:</span> 1 2 3 4 5 6 7 8 9 0 -</div>
+                <div class="key-map-row"><span>Q row:</span> Q W E R T Y U I O P [</div>
+                <div class="key-map-row"><span>A row:</span> A S D F G H J K L ; '</div>
+                <div class="key-map-row"><span>Z row:</span> Z X C V B N M , . / Shift</div>
+              </div>
+              <div class="key-map-group">
+                <div class="key-map-title">Controls</div>
+                <div class="key-map-row"><span>Caps:</span> high strings</div>
+                <div class="key-map-row"><span>Enter:</span> vibrato</div>
+                <div class="key-map-row"><span>Space:</span> sustain</div>
+                <div class="key-map-row"><span>Arrows:</span> bend / octave</div>
+                <div class="key-map-row"><span>` / Tab:</span> velocity</div>
+                <div class="key-map-row"><span>Delete:</span> slant</div>
+                <div class="key-map-row"><span>Ctrl:</span> -2 st</div>
+                <div class="key-map-row"><span>Option:</span> +2 st</div>
               </div>
             </div>
           </div>
@@ -730,7 +862,13 @@
       const vibratoRate = document.getElementById("vibrato-rate");
       const vibratoValue = document.getElementById("vibrato-value");
       const velocityDisplay = document.getElementById("velocity-display");
+      const velocitySlider = document.getElementById("velocity-slider");
+      const capsToggle = document.getElementById("caps-toggle");
+      const sustainToggle = document.getElementById("sustain-toggle");
+      const transposeDown = document.getElementById("transpose-down");
+      const transposeUp = document.getElementById("transpose-up");
       const settings = document.getElementById("settings");
+      const closeSettings = document.getElementById("close-settings");
       const mainEl = document.querySelector("main");
 
       let midiAccess = null;
@@ -746,6 +884,8 @@
       let noteVelocity = 100;
       let soundFontEnabled = false;
       let sustainActive = false;
+      let sustainLatched = false;
+      let sustainHeld = false;
       let autoScale = 1;
       const activeNotes = new Map();
       const sustainedNotes = new Set();
@@ -785,6 +925,44 @@
 
       function updateVelocityDisplay() {
         velocityDisplay.textContent = `Vel ${noteVelocity}`;
+        if (velocitySlider) {
+          velocitySlider.value = String(noteVelocity);
+        }
+      }
+
+      function updateCapsToggle() {
+        capsToggle.setAttribute("aria-pressed", String(capsLockOn));
+      }
+
+      function setCapsLockState(nextState) {
+        if (capsLockOn !== nextState) {
+          capsLockOn = nextState;
+          updateCapsToggle();
+          updateTuningDisplay();
+        }
+      }
+
+      function toggleCapsLock() {
+        setCapsLockState(!capsLockOn);
+      }
+
+      function updateSustainState() {
+        const nextActive = sustainLatched || sustainHeld;
+        if (!nextActive && sustainActive) {
+          releaseSustainedNotes();
+        }
+        sustainActive = nextActive;
+        sustainToggle.setAttribute("aria-pressed", String(sustainLatched));
+      }
+
+      function setTranspose(value) {
+        const clamped = Math.max(-12, Math.min(12, value));
+        transposeRange.value = String(clamped);
+        updateTranspose();
+      }
+
+      function adjustTranspose(delta) {
+        setTranspose(semitoneTranspose + delta);
       }
 
       function applyScale() {
@@ -1150,13 +1328,6 @@
         }
       }
 
-      function setCapsLockState(nextState) {
-        if (capsLockOn !== nextState) {
-          capsLockOn = nextState;
-          updateTuningDisplay();
-        }
-      }
-
       function sendMidi(message) {
         if (midiOutput) {
           midiOutput.send(message);
@@ -1265,10 +1436,23 @@
       }
 
       function handleKeyDown(event) {
-        setCapsLockState(event.getModifierState("CapsLock"));
+        if (event.code === "CapsLock" && !event.repeat) {
+          toggleCapsLock();
+          return;
+        }
 
-        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space", "Tab", "Delete", "Backspace", "Enter", "NumpadEnter"].includes(event.code)) {
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space", "Tab", "Delete", "Backspace", "Enter", "NumpadEnter", "ControlLeft", "ControlRight", "AltLeft", "AltRight"].includes(event.code)) {
           event.preventDefault();
+        }
+
+        if ((event.code === "ControlLeft" || event.code === "ControlRight") && !event.repeat) {
+          adjustTranspose(-2);
+          return;
+        }
+
+        if ((event.code === "AltLeft" || event.code === "AltRight") && !event.repeat) {
+          adjustTranspose(2);
+          return;
         }
 
         if (event.code === "ArrowLeft" && pitchMode !== "left") {
@@ -1307,7 +1491,8 @@
 
         if (event.code === "Space") {
           if (!event.repeat) {
-            sustainActive = true;
+            sustainHeld = true;
+            updateSustainState();
           }
           return;
         }
@@ -1346,8 +1531,6 @@
       }
 
       function handleKeyUp(event) {
-        setCapsLockState(event.getModifierState("CapsLock"));
-
         if (event.code === "ArrowLeft" && pitchMode === "left") {
           pitchMode = "center";
           if (vibratoActive) {
@@ -1375,8 +1558,8 @@
         }
 
         if (event.code === "Space") {
-          sustainActive = false;
-          releaseSustainedNotes();
+          sustainHeld = false;
+          updateSustainState();
           return;
         }
 
@@ -1541,6 +1724,23 @@
         applySoundFontProgram(program);
       });
 
+      capsToggle.addEventListener("click", () => {
+        toggleCapsLock();
+      });
+
+      sustainToggle.addEventListener("click", () => {
+        sustainLatched = !sustainLatched;
+        updateSustainState();
+      });
+
+      transposeDown.addEventListener("click", () => {
+        adjustTranspose(-1);
+      });
+
+      transposeUp.addEventListener("click", () => {
+        adjustTranspose(1);
+      });
+
       bendRange.addEventListener("input", () => {
         updateBendRange();
       });
@@ -1561,6 +1761,11 @@
         }
       });
 
+      velocitySlider.addEventListener("input", () => {
+        noteVelocity = Math.max(1, Math.min(127, Number(velocitySlider.value) || 1));
+        updateVelocityDisplay();
+      });
+
       window.addEventListener("keydown", handleKeyDown);
       window.addEventListener("keyup", handleKeyUp);
       window.addEventListener("pointerup", handlePointerUp);
@@ -1570,12 +1775,17 @@
       fretboard.addEventListener("pointerdown", handlePointerDown);
       neck.addEventListener("pointerdown", handlePointerDown);
       settings.addEventListener("toggle", updateAutoScale);
+      closeSettings.addEventListener("click", () => {
+        settings.open = false;
+      });
 
       populateSoundFontPrograms();
       renderFretboard();
       renderNeckView();
       updateTuningDisplay();
       updateVelocityDisplay();
+      updateCapsToggle();
+      updateSustainState();
       updateBendRange();
       updateTranspose();
       updateAutoScale();
