@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Qwerty Fretboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/js-synthesizer@1.11.0/externals/libfluidsynth-2.4.6.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/js-synthesizer@1.11.0/dist/js-synthesizer.min.js"></script>
     <style>
       :root {
         color-scheme: dark;
@@ -17,6 +19,7 @@
         --text-soft: #bdbdbd;
         --accent: #ffffff;
         --glow: rgba(255, 255, 255, 0.08);
+        --neck-label-width: 64px;
       }
 
       * {
@@ -34,11 +37,11 @@
       }
 
       main {
-        width: min(980px, 100%);
+        width: min(1060px, 100%);
         background: var(--panel);
         border: 1px solid var(--border);
         border-radius: 18px;
-        padding: 24px;
+        padding: 24px 36px 24px 24px;
         box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
       }
 
@@ -50,10 +53,27 @@
       }
 
       h1 {
-        margin: 0 0 6px;
+        margin: 0;
         font-size: 1.6rem;
         font-weight: 600;
         letter-spacing: 0.02em;
+      }
+
+      .title-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .velocity-pill {
+        font-size: 0.8rem;
+        color: var(--text-soft);
+        border: 1px solid var(--border);
+        background: #0b0b0b;
+        padding: 4px 10px;
+        border-radius: 999px;
+        letter-spacing: 0.04em;
       }
 
       .settings {
@@ -96,7 +116,7 @@
         border: 1px solid var(--border);
         border-radius: 12px;
         background: var(--panel-strong);
-        min-width: 250px;
+        min-width: 280px;
       }
 
       label {
@@ -139,6 +159,19 @@
       .toggle {
         display: flex;
         gap: 8px;
+      }
+
+      .key-map {
+        display: grid;
+        gap: 4px;
+        font-size: 0.72rem;
+        color: var(--text-muted);
+        line-height: 1.3;
+      }
+
+      .key-map span {
+        color: var(--text-soft);
+        font-weight: 600;
       }
 
       .fretboard,
@@ -245,7 +278,25 @@
       .neck {
         display: grid;
         gap: 10px;
-        margin-bottom: 8px;
+      }
+
+      .neck-row,
+      .edge-row {
+        display: grid;
+        grid-template-columns: var(--neck-label-width) 1fr;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .neck-label {
+        font-size: 0.75rem;
+        color: var(--text-soft);
+        text-align: right;
+        padding-right: 6px;
+      }
+
+      .neck-label.spacer {
+        opacity: 0;
       }
 
       .neck-string {
@@ -295,8 +346,11 @@
         opacity: 1;
       }
 
-      .edge-labels {
+      .edge-row {
         margin-top: 6px;
+      }
+
+      .edge-labels {
         display: grid;
         grid-template-columns: repeat(var(--fret-count), 1fr);
         gap: 6px;
@@ -333,7 +387,10 @@
     <main>
       <header>
         <div>
-          <h1>Qwerty Fretboard</h1>
+          <div class="title-row">
+            <h1>Qwerty Fretboard</h1>
+            <div class="velocity-pill" id="velocity-display">Vel 100</div>
+          </div>
         </div>
         <details class="settings" id="settings">
           <summary aria-label="Settings">⚙️</summary>
@@ -348,20 +405,35 @@
               <input id="vibrato-rate" type="range" min="2" max="12" value="6" step="1" />
               <span id="vibrato-value">6 Hz</span>
             </div>
-            <div>
-              <label for="bend-range">Bend</label>
-              <select id="bend-range">
-                <option value="8192" selected>Whole</option>
-                <option value="4096">Half</option>
-                <option value="2048">Quarter</option>
-              </select>
+            <div class="range-row">
+              <label for="bend-range">Bend range</label>
+              <input id="bend-range" type="range" min="1" max="12" value="2" step="1" />
+              <span id="bend-value">2 st</span>
             </div>
             <div class="toggle">
               <button id="mode-classic" type="button" aria-pressed="true">Classic</button>
               <button id="mode-neck" type="button" aria-pressed="false">Neck</button>
             </div>
             <button id="toggle-slant" type="button" aria-pressed="false">Slant</button>
+            <div class="toggle">
+              <button id="soundfont-toggle" type="button" aria-pressed="false">SoundFont</button>
+            </div>
+            <div>
+              <label for="soundfont-program">Sound</label>
+              <select id="soundfont-program"></select>
+            </div>
+            <div class="status" id="soundfont-status">Soundfont: off.</div>
             <div class="status" id="midi-status">MIDI: not connected.</div>
+            <div class="key-map">
+              <div><span>1:</span> 1 2 3 4 5 6 7 8 9 0 -</div>
+              <div><span>Q:</span> Q W E R T Y U I O P [</div>
+              <div><span>A:</span> A S D F G H J K L ; '</div>
+              <div><span>Z:</span> Z X C V B N M , . / Shift</div>
+              <div>
+                <span>Other:</span> Caps = high strings, Arrows = bend/transpose, Space = vibrato,
+                ` / Tab = velocity
+              </div>
+            </div>
           </div>
         </details>
       </header>
@@ -375,7 +447,10 @@
       <section class="neck-view hidden" id="neck-view">
         <div class="neck-wrap">
           <div class="neck" id="neck"></div>
-          <div class="edge-labels" id="edge-labels"></div>
+          <div class="edge-row">
+            <div class="neck-label spacer"></div>
+            <div class="edge-labels" id="edge-labels"></div>
+          </div>
         </div>
       </section>
     </main>
@@ -466,6 +541,140 @@
         { name: "D", base: 50 },
       ];
 
+      const DEFAULT_SOUNDFONT_URL =
+        "https://github.com/santismo/qwerty-fretboard/blob/main/Roland.SC-55.sf2";
+
+      const gmPrograms = [
+        "Acoustic Grand Piano",
+        "Bright Acoustic Piano",
+        "Electric Grand Piano",
+        "Honky-tonk Piano",
+        "Electric Piano 1",
+        "Electric Piano 2",
+        "Harpsichord",
+        "Clavinet",
+        "Celesta",
+        "Glockenspiel",
+        "Music Box",
+        "Vibraphone",
+        "Marimba",
+        "Xylophone",
+        "Tubular Bells",
+        "Dulcimer",
+        "Drawbar Organ",
+        "Percussive Organ",
+        "Rock Organ",
+        "Church Organ",
+        "Reed Organ",
+        "Accordion",
+        "Harmonica",
+        "Tango Accordion",
+        "Acoustic Guitar (nylon)",
+        "Acoustic Guitar (steel)",
+        "Electric Guitar (jazz)",
+        "Electric Guitar (clean)",
+        "Electric Guitar (muted)",
+        "Overdriven Guitar",
+        "Distortion Guitar",
+        "Guitar Harmonics",
+        "Acoustic Bass",
+        "Electric Bass (finger)",
+        "Electric Bass (pick)",
+        "Fretless Bass",
+        "Slap Bass 1",
+        "Slap Bass 2",
+        "Synth Bass 1",
+        "Synth Bass 2",
+        "Violin",
+        "Viola",
+        "Cello",
+        "Contrabass",
+        "Tremolo Strings",
+        "Pizzicato Strings",
+        "Orchestral Harp",
+        "Timpani",
+        "String Ensemble 1",
+        "String Ensemble 2",
+        "Synth Strings 1",
+        "Synth Strings 2",
+        "Choir Aahs",
+        "Voice Oohs",
+        "Synth Voice",
+        "Orchestra Hit",
+        "Trumpet",
+        "Trombone",
+        "Tuba",
+        "Muted Trumpet",
+        "French Horn",
+        "Brass Section",
+        "Synth Brass 1",
+        "Synth Brass 2",
+        "Soprano Sax",
+        "Alto Sax",
+        "Tenor Sax",
+        "Baritone Sax",
+        "Oboe",
+        "English Horn",
+        "Bassoon",
+        "Clarinet",
+        "Piccolo",
+        "Flute",
+        "Recorder",
+        "Pan Flute",
+        "Blown Bottle",
+        "Shakuhachi",
+        "Whistle",
+        "Ocarina",
+        "Lead 1 (square)",
+        "Lead 2 (sawtooth)",
+        "Lead 3 (calliope)",
+        "Lead 4 (chiff)",
+        "Lead 5 (charang)",
+        "Lead 6 (voice)",
+        "Lead 7 (fifths)",
+        "Lead 8 (bass + lead)",
+        "Pad 1 (new age)",
+        "Pad 2 (warm)",
+        "Pad 3 (polysynth)",
+        "Pad 4 (choir)",
+        "Pad 5 (bowed)",
+        "Pad 6 (metallic)",
+        "Pad 7 (halo)",
+        "Pad 8 (sweep)",
+        "FX 1 (rain)",
+        "FX 2 (soundtrack)",
+        "FX 3 (crystal)",
+        "FX 4 (atmosphere)",
+        "FX 5 (brightness)",
+        "FX 6 (goblins)",
+        "FX 7 (echoes)",
+        "FX 8 (sci-fi)",
+        "Sitar",
+        "Banjo",
+        "Shamisen",
+        "Koto",
+        "Kalimba",
+        "Bag pipe",
+        "Fiddle",
+        "Shanai",
+        "Tinkle Bell",
+        "Agogo",
+        "Steel Drums",
+        "Woodblock",
+        "Taiko Drum",
+        "Melodic Tom",
+        "Synth Drum",
+        "Reverse Cymbal",
+        "Guitar Fret Noise",
+        "Breath Noise",
+        "Seashore",
+        "Bird Tweet",
+        "Telephone Ring",
+        "Helicopter",
+        "Applause",
+        "Gunshot",
+      ];
+
       const midiOutputSelect = document.getElementById("midi-output");
       const midiStatus = document.getElementById("midi-status");
       const refreshButton = document.getElementById("refresh-midi");
@@ -478,9 +687,14 @@
       const modeClassic = document.getElementById("mode-classic");
       const modeNeck = document.getElementById("mode-neck");
       const toggleSlant = document.getElementById("toggle-slant");
-      const bendRangeSelect = document.getElementById("bend-range");
+      const soundFontToggle = document.getElementById("soundfont-toggle");
+      const soundFontProgram = document.getElementById("soundfont-program");
+      const soundFontStatus = document.getElementById("soundfont-status");
+      const bendRange = document.getElementById("bend-range");
+      const bendValue = document.getElementById("bend-value");
       const vibratoRate = document.getElementById("vibrato-rate");
       const vibratoValue = document.getElementById("vibrato-value");
+      const velocityDisplay = document.getElementById("velocity-display");
 
       let midiAccess = null;
       let midiOutput = null;
@@ -490,14 +704,30 @@
       let vibratoActive = false;
       let vibratoTimer = null;
       let vibratoPhase = 0;
-      let bendRange = Number(bendRangeSelect.value);
+      let bendSemitones = Number(bendRange.value);
       let noteVelocity = 100;
+      let soundFontEnabled = false;
       const activeNotes = new Map();
+
+      let audioCtx = null;
+      let master = null;
+
+      const sf = {
+        synth: null,
+        node: null,
+        sfontId: null,
+        ready: false,
+        loadingSynth: false,
+        loadingFont: false,
+        lastUrl: "",
+        program: 0,
+      };
 
       const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
       const cellsByCode = new Map();
       const neckCells = new Map();
       const neckCellsByCode = new Map();
+      const neckLabelEls = [];
       const rowOffsetStep = 14;
       const velocityStep = 5;
       const markerFrets = [3, 5, 7, 9];
@@ -509,6 +739,181 @@
         const octave = Math.floor(midiNote / 12) - 1;
         const name = noteNames[midiNote % 12];
         return `${name}${octave}`;
+      }
+
+      function updateVelocityDisplay() {
+        velocityDisplay.textContent = `Vel ${noteVelocity}`;
+      }
+
+      function populateSoundFontPrograms() {
+        soundFontProgram.innerHTML = "";
+        gmPrograms.forEach((name, index) => {
+          const option = document.createElement("option");
+          option.value = index;
+          option.textContent = `${index + 1}. ${name}`;
+          soundFontProgram.appendChild(option);
+        });
+        soundFontProgram.value = "0";
+        soundFontProgram.disabled = true;
+      }
+
+      function normalizeSoundFontUrl(url) {
+        let u = String(url || "").trim();
+        if (!u) return "";
+        const match = u.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^#?]+)/i);
+        if (match) {
+          u = `https://raw.githubusercontent.com/${match[1]}/${match[2]}/${match[3]}`;
+        }
+        return u;
+      }
+
+      function ensureAudioContext() {
+        if (audioCtx) return audioCtx;
+        const AC = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AC({ latencyHint: "interactive" });
+        master = audioCtx.createGain();
+        master.gain.value = 0.9;
+        master.connect(audioCtx.destination);
+        return audioCtx;
+      }
+
+      function updateSoundFontStatus(text) {
+        soundFontStatus.textContent = text;
+      }
+
+      async function ensureSoundFontSynth() {
+        if (sf.synth || sf.loadingSynth) return;
+        sf.loadingSynth = true;
+        try {
+          if (!window.JSSynth) throw new Error("Soundfont engine unavailable.");
+          await window.JSSynth.waitForReady();
+          const ctx = ensureAudioContext();
+          const synth = new window.JSSynth.Synthesizer();
+          synth.init(ctx.sampleRate, { initialGain: 0.7, midiChannelCount: 16 });
+          const node = synth.createAudioNode(ctx, 4096);
+          node.connect(master);
+          sf.synth = synth;
+          sf.node = node;
+        } finally {
+          sf.loadingSynth = false;
+        }
+      }
+
+      async function loadSoundFontUrl(url) {
+        if (sf.loadingFont) return;
+        sf.loadingFont = true;
+        try {
+          await ensureSoundFontSynth();
+          const normalized = normalizeSoundFontUrl(url);
+          if (!normalized) throw new Error("Soundfont URL missing.");
+          const res = await fetch(normalized, { cache: "no-store" });
+          if (!res.ok) throw new Error("Soundfont fetch failed.");
+          const buffer = await res.arrayBuffer();
+          if (sf.sfontId != null) {
+            try {
+              sf.synth.unloadSFont(sf.sfontId);
+            } catch {}
+          }
+          sf.sfontId = await sf.synth.loadSFont(buffer);
+          sf.ready = true;
+          sf.lastUrl = normalized;
+          applySoundFontProgram(sf.program);
+        } finally {
+          sf.loadingFont = false;
+        }
+      }
+
+      function applySoundFontProgram(program) {
+        if (!sf.ready || !sf.synth || sf.sfontId == null) return;
+        const prog = Math.max(0, Math.min(127, Math.round(program)));
+        sf.program = prog;
+        sf.synth.midiProgramSelect(0, sf.sfontId, 0, prog);
+      }
+
+      function sendSoundFontControlChange(controller, value) {
+        if (!soundFontEnabled || !sf.synth) return;
+        if (typeof sf.synth.midiControlChange === "function") {
+          sf.synth.midiControlChange(0, controller, value);
+        }
+      }
+
+      function sendSoundFontPitchBend(value) {
+        if (!soundFontEnabled || !sf.synth) return;
+        if (typeof sf.synth.midiPitchBend === "function") {
+          sf.synth.midiPitchBend(0, value);
+        } else if (typeof sf.synth.midiPitchWheel === "function") {
+          sf.synth.midiPitchWheel(0, value);
+        }
+      }
+
+      function sendPitchBendSensitivity(semitones) {
+        const value = Math.max(1, Math.min(12, Math.round(semitones)));
+        const messages = [
+          [0xb0, 101, 0],
+          [0xb0, 100, 0],
+          [0xb0, 6, value],
+          [0xb0, 38, 0],
+          [0xb0, 101, 127],
+          [0xb0, 100, 127],
+        ];
+        messages.forEach(sendMidi);
+        sendSoundFontControlChange(101, 0);
+        sendSoundFontControlChange(100, 0);
+        sendSoundFontControlChange(6, value);
+        sendSoundFontControlChange(38, 0);
+        sendSoundFontControlChange(101, 127);
+        sendSoundFontControlChange(100, 127);
+      }
+
+      async function setSoundFontEnabled(enabled) {
+        if (soundFontEnabled === enabled) return;
+        soundFontEnabled = enabled;
+        soundFontToggle.setAttribute("aria-pressed", String(enabled));
+        soundFontProgram.disabled = !enabled;
+        if (!enabled) {
+          updateSoundFontStatus("Soundfont: off.");
+          soundFontAllNotesOff();
+          return;
+        }
+        const ctx = ensureAudioContext();
+        if (ctx.state === "suspended") {
+          await ctx.resume();
+        }
+        const normalized = normalizeSoundFontUrl(DEFAULT_SOUNDFONT_URL);
+        if (sf.ready && sf.lastUrl === normalized) {
+          updateSoundFontStatus("Soundfont: ready.");
+          sendPitchBendSensitivity(bendSemitones);
+          return;
+        }
+        updateSoundFontStatus("Soundfont: loading...");
+        try {
+          await loadSoundFontUrl(DEFAULT_SOUNDFONT_URL);
+          updateSoundFontStatus("Soundfont: ready.");
+          sendPitchBendSensitivity(bendSemitones);
+        } catch {
+          updateSoundFontStatus("Soundfont: failed.");
+          soundFontEnabled = false;
+          soundFontToggle.setAttribute("aria-pressed", "false");
+          soundFontProgram.disabled = true;
+        }
+      }
+
+      function soundFontNoteOn(midiNote, velocity) {
+        if (!soundFontEnabled || !sf.ready || !sf.synth) return;
+        const v = Math.max(1, Math.min(127, Math.round(velocity)));
+        sf.synth.midiNoteOn(0, midiNote, v);
+      }
+
+      function soundFontNoteOff(midiNote) {
+        if (!soundFontEnabled || !sf.ready || !sf.synth) return;
+        sf.synth.midiNoteOff(0, midiNote);
+      }
+
+      function soundFontAllNotesOff() {
+        if (!sf.synth) return;
+        try {
+          sf.synth.midiAllNotesOff(0);
+        } catch {}
       }
 
       function renderFretboard() {
@@ -562,6 +967,7 @@
         edgeLabels.innerHTML = "";
         neckCells.clear();
         neckCellsByCode.clear();
+        neckLabelEls.length = 0;
 
         const fretCount = rowDefinitions[0].keys.length;
         const bottomOffset = (rowDefinitions.length - 1) * rowOffsetStep;
@@ -571,6 +977,14 @@
         edgeLabels.style.setProperty("--edge-offset", `${bottomOffset}px`);
 
         rowDefinitions.forEach((row, rowIndex) => {
+          const rowWrap = document.createElement("div");
+          rowWrap.className = "neck-row";
+
+          const labelEl = document.createElement("div");
+          labelEl.className = "neck-label";
+          rowWrap.appendChild(labelEl);
+          neckLabelEls[rowIndex] = labelEl;
+
           const stringRow = document.createElement("div");
           stringRow.className = "neck-string";
           stringRow.style.setProperty("--row-offset", `${rowIndex * rowOffsetStep}px`);
@@ -596,7 +1010,8 @@
               neckCellsByCode.set(key.code, fretEl);
             }
           }
-          neck.appendChild(stringRow);
+          rowWrap.appendChild(stringRow);
+          neck.appendChild(rowWrap);
         });
 
         for (let fretIndex = 0; fretIndex < fretCount; fretIndex += 1) {
@@ -628,6 +1043,11 @@
             const noteSpan = fretEl.querySelector("span");
             noteSpan.textContent = getNoteName(midiNote);
           });
+        });
+
+        neckLabelEls.forEach((labelEl, rowIndex) => {
+          const stringInfo = tuning[rowIndex];
+          labelEl.textContent = `${stringInfo.name}${transposeLabel}`;
         });
 
         updateNeckNotes();
@@ -666,6 +1086,7 @@
         const lsb = clamped & 0x7f;
         const msb = (clamped >> 7) & 0x7f;
         sendMidi([0xe0, lsb, msb]);
+        sendSoundFontPitchBend(clamped);
       }
 
       function stopVibrato() {
@@ -682,13 +1103,29 @@
       function startVibrato() {
         if (vibratoTimer) return;
         const rate = Number(vibratoRate.value);
-        const depth = Math.round(bendRange * 0.27);
+        const baseDepth = 2200;
+        const depth = Math.round(baseDepth * (2 / Math.max(1, bendSemitones)));
         vibratoTimer = setInterval(() => {
           if (pitchMode !== "center") return;
           vibratoPhase += (rate / 60) * Math.PI * 2;
           const bendAmount = Math.round(Math.sin(vibratoPhase) * depth);
           sendPitchBend(8192 + bendAmount);
         }, 16);
+      }
+
+      function updateBendRange() {
+        bendSemitones = Number(bendRange.value);
+        bendValue.textContent = `${bendSemitones} st`;
+        sendPitchBendSensitivity(bendSemitones);
+        if (pitchMode === "left") {
+          sendPitchBend(0);
+        } else if (pitchMode === "right") {
+          sendPitchBend(16383);
+        }
+        if (vibratoActive && pitchMode === "center") {
+          stopVibrato();
+          startVibrato();
+        }
       }
 
       function handleKeyDown(event) {
@@ -701,14 +1138,14 @@
         if (event.code === "ArrowLeft" && pitchMode !== "left") {
           pitchMode = "left";
           stopVibrato();
-          sendPitchBend(8192 - bendRange);
+          sendPitchBend(0);
           return;
         }
 
         if (event.code === "ArrowRight" && pitchMode !== "right") {
           pitchMode = "right";
           stopVibrato();
-          sendPitchBend(8192 + bendRange);
+          sendPitchBend(16383);
           return;
         }
 
@@ -734,11 +1171,13 @@
 
         if (event.code === "Backquote") {
           noteVelocity = Math.min(127, noteVelocity + velocityStep);
+          updateVelocityDisplay();
           return;
         }
 
         if (event.code === "Tab") {
           noteVelocity = Math.max(1, noteVelocity - velocityStep);
+          updateVelocityDisplay();
           return;
         }
 
@@ -753,6 +1192,7 @@
           neckCell.classList.add("active");
         }
         sendMidi([0x90, midiNote, noteVelocity]);
+        soundFontNoteOn(midiNote, noteVelocity);
       }
 
       function handleKeyUp(event) {
@@ -796,6 +1236,7 @@
           neckCell.classList.remove("active");
         }
         sendMidi([0x80, midiNote, 0x00]);
+        soundFontNoteOff(midiNote);
       }
 
       function refreshMidiOutputs() {
@@ -821,6 +1262,7 @@
         midiOutputSelect.selectedIndex = 0;
         midiOutput = outputs[0];
         midiStatus.textContent = `MIDI: ${midiOutput.name || "connected"}.`;
+        sendPitchBendSensitivity(bendSemitones);
       }
 
       async function initMidi() {
@@ -844,6 +1286,7 @@
         midiStatus.textContent = midiOutput
           ? `MIDI: ${midiOutput.name || "connected"}.`
           : "MIDI: choose output.";
+        sendPitchBendSensitivity(bendSemitones);
       });
 
       refreshButton.addEventListener("click", () => {
@@ -873,17 +1316,17 @@
         toggleSlant.setAttribute("aria-pressed", String(isActive));
       });
 
-      bendRangeSelect.addEventListener("change", () => {
-        bendRange = Number(bendRangeSelect.value);
-        if (pitchMode === "left") {
-          sendPitchBend(8192 - bendRange);
-        } else if (pitchMode === "right") {
-          sendPitchBend(8192 + bendRange);
-        }
-        if (vibratoActive && pitchMode === "center") {
-          stopVibrato();
-          startVibrato();
-        }
+      soundFontToggle.addEventListener("click", () => {
+        setSoundFontEnabled(!soundFontEnabled);
+      });
+
+      soundFontProgram.addEventListener("change", () => {
+        const program = Number(soundFontProgram.value);
+        applySoundFontProgram(program);
+      });
+
+      bendRange.addEventListener("input", () => {
+        updateBendRange();
       });
 
       vibratoRate.addEventListener("input", () => {
@@ -897,9 +1340,12 @@
       window.addEventListener("keydown", handleKeyDown);
       window.addEventListener("keyup", handleKeyUp);
 
+      populateSoundFontPrograms();
       renderFretboard();
       renderNeckView();
       updateTuningDisplay();
+      updateVelocityDisplay();
+      updateBendRange();
       setView("classic");
       initMidi();
     </script>
