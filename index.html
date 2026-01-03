@@ -8,12 +8,8 @@
       :root {
         color-scheme: dark;
         font-family: "Inter", "Segoe UI", system-ui, sans-serif;
-        background: #050505;
-        color: #f5f5f5;
-      }
-
-      * {
-        box-sizing: border-box;
+        background: #0d0f14;
+        color: #e3e6eb;
       }
 
       body {
@@ -22,103 +18,96 @@
         display: flex;
         justify-content: center;
         align-items: center;
-        padding: 20px;
-        background: #050505;
+        padding: 24px;
+        background: radial-gradient(circle at top, #1b1f2a, #0d0f14 55%);
       }
 
       main {
-        width: min(980px, 100%);
-        background: #0b0b0b;
-        border: 1px solid #1e1e1e;
-        border-radius: 18px;
-        padding: 24px;
+        width: min(960px, 100%);
+        background: #121621;
+        border: 1px solid #22283a;
+        border-radius: 20px;
+        padding: 28px;
+        box-shadow: 0 30px 60px rgba(0, 0, 0, 0.45);
       }
 
       header {
-        display: grid;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
         gap: 16px;
-        grid-template-columns: 1fr auto;
-        align-items: center;
       }
 
       h1 {
-        margin: 0 0 6px;
-        font-size: 1.6rem;
-        font-weight: 600;
+        margin: 0 0 8px;
+        font-size: 1.8rem;
       }
 
       p {
         margin: 0;
-        color: #b8b8b8;
-        font-size: 0.95rem;
+        color: #a5adbb;
       }
 
       .controls {
         display: grid;
-        gap: 10px;
-        padding: 12px;
-        border: 1px solid #1f1f1f;
-        border-radius: 12px;
-        background: #0f0f0f;
-        min-width: 250px;
+        gap: 12px;
+        padding: 16px;
+        background: #171c27;
+        border-radius: 14px;
+        border: 1px solid #262c3d;
+        min-width: 260px;
       }
 
       label {
-        font-size: 0.8rem;
-        color: #bdbdbd;
+        font-size: 0.85rem;
+        color: #a5adbb;
       }
 
       select,
-      button,
-      input[type="range"] {
-        width: 100%;
-        background: #070707;
-        border: 1px solid #262626;
-        color: #f5f5f5;
-        padding: 8px 10px;
+      button {
+        background: #111623;
+        border: 1px solid #2a3146;
+        color: #e3e6eb;
+        padding: 8px 12px;
         border-radius: 8px;
-        font-size: 0.9rem;
+        font-size: 0.95rem;
       }
 
       button {
         cursor: pointer;
+        transition: transform 0.15s ease, border-color 0.15s ease;
       }
 
       button:hover {
-        border-color: #ffffff;
+        border-color: #4351ff;
+        transform: translateY(-1px);
       }
 
       .status {
-        font-size: 0.8rem;
-        color: #d1d1d1;
+        font-size: 0.85rem;
+        color: #8aa4ff;
       }
 
-      .toggle {
-        display: flex;
-        gap: 8px;
-      }
-
-      .fretboard,
-      .neck-view {
-        margin-top: 20px;
+      .fretboard {
+        margin-top: 24px;
+        display: grid;
+        gap: 12px;
       }
 
       .string-row {
         display: grid;
-        grid-template-columns: 90px 1fr;
-        gap: 12px;
+        grid-template-columns: 100px 1fr;
         align-items: center;
-        padding: 8px 10px;
-        border-bottom: 1px solid #141414;
-      }
-
-      .string-row:last-child {
-        border-bottom: none;
+        gap: 12px;
+        background: #131825;
+        border-radius: 12px;
+        padding: 10px 14px;
+        border: 1px solid #22283a;
       }
 
       .string-label {
-        font-size: 0.85rem;
-        color: #d6d6d6;
+        font-weight: 600;
+        color: #cbd5f4;
       }
 
       .frets {
@@ -129,13 +118,13 @@
       }
 
       .fret {
-        background: #0f0f0f;
-        border-radius: 6px;
+        background: #1b2130;
+        border-radius: 8px;
         padding: 6px 4px;
         text-align: center;
-        border: 1px solid #1a1a1a;
+        border: 1px solid transparent;
         font-size: 0.75rem;
-        color: #bdbdbd;
+        color: #9aa4b9;
         display: grid;
         gap: 2px;
         min-height: 44px;
@@ -143,101 +132,27 @@
 
       .fret span {
         font-size: 0.65rem;
-        color: #7a7a7a;
+        color: #6e768b;
       }
 
       .fret.active {
-        border-color: #ffffff;
+        border-color: #6c7cff;
+        background: #212a3d;
         color: #ffffff;
-        background: #1a1a1a;
+        box-shadow: inset 0 0 0 1px rgba(108, 124, 255, 0.4);
       }
 
       .legend {
-        margin-top: 16px;
-        font-size: 0.8rem;
-        color: #9a9a9a;
-        display: grid;
-        gap: 6px;
-      }
-
-      .hidden {
-        display: none;
-      }
-
-      .neck-wrap {
-        position: relative;
-        padding: 20px 10px 10px 10px;
-        background: #0d0d0d;
-        border: 1px solid #1a1a1a;
-        border-radius: 12px;
-        overflow: hidden;
-      }
-
-      .neck {
-        display: grid;
-        gap: 10px;
-        transform: skewX(-8deg);
-      }
-
-      .neck-string {
-        display: grid;
-        grid-template-columns: repeat(11, 1fr);
-        gap: 6px;
-        align-items: center;
-      }
-
-      .neck-fret {
-        position: relative;
-        height: 30px;
-        border-left: 1px solid #1f1f1f;
-        border-right: 1px solid #1f1f1f;
-        background: #0a0a0a;
-      }
-
-      .neck-fret.marker::after {
-        content: "";
-        position: absolute;
-        inset: 8px 40%;
-        border-radius: 999px;
-        background: #1f1f1f;
-      }
-
-      .note-dot {
-        position: absolute;
-        inset: 4px;
-        border-radius: 999px;
-        background: #ffffff;
-        color: #050505;
-        font-size: 0.6rem;
+        margin-top: 18px;
         display: flex;
-        align-items: center;
-        justify-content: center;
-        opacity: 0;
-        transition: opacity 0.1s ease;
+        flex-wrap: wrap;
+        gap: 12px;
+        font-size: 0.85rem;
+        color: #9aa4b9;
       }
 
-      .neck-fret.active .note-dot {
-        opacity: 1;
-      }
-
-      .edge-labels {
-        margin-top: 10px;
-        display: grid;
-        grid-template-columns: repeat(11, 1fr);
-        gap: 6px;
-        font-size: 0.7rem;
-        color: #6f6f6f;
-        text-align: center;
-      }
-
-      .range-row {
-        display: grid;
-        gap: 6px;
-      }
-
-      .range-row span {
-        font-size: 0.75rem;
-        color: #bdbdbd;
+      .legend strong {
+        color: #e3e6eb;
       }
     </style>
   </head>
@@ -246,7 +161,7 @@
       <header>
         <div>
           <h1>Qwerty Fretboard MIDI</h1>
-          <p>Play guitar-style notes on your keyboard. Caps Lock switches to high strings.</p>
+          <p>Play your keyboard like a guitar fretboard. Toggle Caps Lock for high strings.</p>
         </div>
         <div class="controls">
           <div>
@@ -254,33 +169,15 @@
             <select id="midi-output"></select>
           </div>
           <button id="refresh-midi" type="button">Refresh MIDI Devices</button>
-          <div class="range-row">
-            <label for="vibrato-rate">Vibrato rate</label>
-            <input id="vibrato-rate" type="range" min="2" max="12" value="6" step="1" />
-            <span id="vibrato-value">6 Hz</span>
-          </div>
-          <div class="toggle">
-            <button id="mode-classic" type="button">Classic view</button>
-            <button id="mode-neck" type="button">Neck view</button>
-          </div>
           <div class="status" id="midi-status">MIDI not connected.</div>
         </div>
       </header>
 
       <section class="fretboard" id="fretboard"></section>
 
-      <section class="neck-view hidden" id="neck-view">
-        <div class="neck-wrap">
-          <div class="neck" id="neck"></div>
-          <div class="edge-labels" id="edge-labels"></div>
-        </div>
-      </section>
-
       <div class="legend">
-        <div>Rows: Z-/ (Low E), A-' (A), Q-[ (D), 1-- (G)</div>
-        <div>Caps Lock: 1-- (High e), Q-[ (B), A-' (G), Z-/ (D)</div>
-        <div>Arrows: Left/Right pitch bend, Up/Down octave transpose</div>
-        <div>Space: Vibrato (rate adjustable)</div>
+        <div><strong>Rows:</strong> Z-/ (Low E), A-' (A), Q-[ (D), 1-- (G)</div>
+        <div><strong>Caps Lock:</strong> 1-- (High e), Q-[ (B), A-' (G), Z-/ (D)</div>
       </div>
     </main>
 
@@ -374,27 +271,15 @@
       const midiStatus = document.getElementById("midi-status");
       const refreshButton = document.getElementById("refresh-midi");
       const fretboard = document.getElementById("fretboard");
-      const neckView = document.getElementById("neck-view");
-      const neck = document.getElementById("neck");
-      const edgeLabels = document.getElementById("edge-labels");
-      const modeClassic = document.getElementById("mode-classic");
-      const modeNeck = document.getElementById("mode-neck");
-      const vibratoRate = document.getElementById("vibrato-rate");
-      const vibratoValue = document.getElementById("vibrato-value");
 
       let midiAccess = null;
       let midiOutput = null;
       let capsLockOn = false;
-      let octaveTranspose = 0;
-      let pitchMode = "center";
-      let vibratoActive = false;
-      let vibratoTimer = null;
-      let vibratoPhase = 0;
       const activeNotes = new Map();
 
       const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
       const cellsByCode = new Map();
-      const neckCells = new Map();
 
       function getNoteName(midiNote) {
         const octave = Math.floor(midiNote / 12) - 1;
@@ -433,40 +318,6 @@
         });
       }
 
-      function renderNeckView() {
-        neck.innerHTML = "";
-        edgeLabels.innerHTML = "";
-        neckCells.clear();
-
-        const fretCount = 11;
-        const markerFrets = new Set([3, 5, 7, 9]);
-
-        for (let stringIndex = 0; stringIndex < 4; stringIndex += 1) {
-          const stringRow = document.createElement("div");
-          stringRow.className = "neck-string";
-          for (let fretIndex = 1; fretIndex <= fretCount; fretIndex += 1) {
-            const fretEl = document.createElement("div");
-            fretEl.className = "neck-fret";
-            if (markerFrets.has(fretIndex)) {
-              fretEl.classList.add("marker");
-            }
-            const noteDot = document.createElement("div");
-            noteDot.className = "note-dot";
-            fretEl.appendChild(noteDot);
-            stringRow.appendChild(fretEl);
-            neckCells.set(`${stringIndex}-${fretIndex}`, { fretEl, noteDot });
-          }
-          neck.appendChild(stringRow);
-        }
-
-        const lowELabels = rowDefinitions[3].keys.slice(0, fretCount).map((key) => key.label);
-        lowELabels.forEach((label) => {
-          const labelEl = document.createElement("div");
-          labelEl.textContent = label;
-          edgeLabels.appendChild(labelEl);
-        });
-      }
-
       function updateTuningDisplay() {
         const tuning = capsLockOn ? tuningCaps : tuningNormal;
         const rows = fretboard.querySelectorAll(".string-row");
@@ -475,33 +326,16 @@
           const labelEl = rowEl.querySelector(".string-label");
           const frets = rowEl.querySelectorAll(".fret");
           const stringInfo = tuning[rowIndex];
-          labelEl.textContent = `${stringInfo.name} (${octaveTranspose >= 0 ? "+" : ""}${octaveTranspose})`;
+          labelEl.textContent = stringInfo.name;
 
           frets.forEach((fretEl) => {
             const fretNumber = Number(fretEl.dataset.fret);
-            const midiNote = stringInfo.base + fretNumber + octaveTranspose * 12;
+            const midiNote = stringInfo.base + fretNumber;
             fretEl.dataset.note = midiNote;
             const noteSpan = fretEl.querySelector("span");
             noteSpan.textContent = getNoteName(midiNote);
           });
         });
-
-        updateNeckNotes();
-      }
-
-      function updateNeckNotes() {
-        const tuning = capsLockOn ? tuningCaps : tuningNormal;
-        const fretCount = 11;
-
-        for (let stringIndex = 0; stringIndex < tuning.length; stringIndex += 1) {
-          for (let fretIndex = 1; fretIndex <= fretCount; fretIndex += 1) {
-            const midiNote = tuning[stringIndex].base + fretIndex + octaveTranspose * 12;
-            const cell = neckCells.get(`${stringIndex}-${fretIndex}`);
-            if (!cell) continue;
-            cell.fretEl.dataset.note = midiNote;
-            cell.noteDot.textContent = getNoteName(midiNote);
-          }
-        }
       }
 
       function setCapsLockState(nextState) {
@@ -517,118 +351,19 @@
         }
       }
 
-      function sendPitchBend(value) {
-        const clamped = Math.min(16383, Math.max(0, value));
-        const lsb = clamped & 0x7f;
-        const msb = (clamped >> 7) & 0x7f;
-        sendMidi([0xe0, lsb, msb]);
-      }
-
-      function stopVibrato() {
-        if (vibratoTimer) {
-          clearInterval(vibratoTimer);
-          vibratoTimer = null;
-        }
-        vibratoPhase = 0;
-        if (pitchMode === "center") {
-          sendPitchBend(8192);
-        }
-      }
-
-      function startVibrato() {
-        if (vibratoTimer) return;
-        const rate = Number(vibratoRate.value);
-        vibratoTimer = setInterval(() => {
-          if (pitchMode !== "center") return;
-          vibratoPhase += (rate / 60) * Math.PI * 2;
-          const bendAmount = Math.round(Math.sin(vibratoPhase) * 2200);
-          sendPitchBend(8192 + bendAmount);
-        }, 16);
-      }
-
       function handleKeyDown(event) {
         setCapsLockState(event.getModifierState("CapsLock"));
-
-        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space"].includes(event.code)) {
-          event.preventDefault();
-        }
-
-        if (event.code === "ArrowLeft" && pitchMode !== "left") {
-          pitchMode = "left";
-          stopVibrato();
-          sendPitchBend(0);
-          return;
-        }
-
-        if (event.code === "ArrowRight" && pitchMode !== "right") {
-          pitchMode = "right";
-          stopVibrato();
-          sendPitchBend(16383);
-          return;
-        }
-
-        if (event.code === "ArrowUp" && !event.repeat) {
-          octaveTranspose += 1;
-          updateTuningDisplay();
-          return;
-        }
-
-        if (event.code === "ArrowDown" && !event.repeat) {
-          octaveTranspose -= 1;
-          updateTuningDisplay();
-          return;
-        }
-
-        if (event.code === "Space") {
-          vibratoActive = true;
-          if (pitchMode === "center") {
-            startVibrato();
-          }
-          return;
-        }
-
         const cell = cellsByCode.get(event.code);
         if (!cell || event.repeat) return;
 
         const midiNote = Number(cell.dataset.note);
         activeNotes.set(event.code, midiNote);
         cell.classList.add("active");
-        const neckCell = findNeckCell(midiNote);
-        if (neckCell) {
-          neckCell.classList.add("active");
-        }
         sendMidi([0x90, midiNote, 0x64]);
       }
 
       function handleKeyUp(event) {
         setCapsLockState(event.getModifierState("CapsLock"));
-
-        if (event.code === "ArrowLeft" && pitchMode === "left") {
-          pitchMode = "center";
-          if (vibratoActive) {
-            startVibrato();
-          } else {
-            sendPitchBend(8192);
-          }
-          return;
-        }
-
-        if (event.code === "ArrowRight" && pitchMode === "right") {
-          pitchMode = "center";
-          if (vibratoActive) {
-            startVibrato();
-          } else {
-            sendPitchBend(8192);
-          }
-          return;
-        }
-
-        if (event.code === "Space") {
-          vibratoActive = false;
-          stopVibrato();
-          return;
-        }
-
         const midiNote = activeNotes.get(event.code);
         if (midiNote === undefined) return;
         activeNotes.delete(event.code);
@@ -636,21 +371,7 @@
         if (cell) {
           cell.classList.remove("active");
         }
-        const neckCell = findNeckCell(midiNote);
-        if (neckCell) {
-          neckCell.classList.remove("active");
-        }
         sendMidi([0x80, midiNote, 0x00]);
-      }
-
-      function findNeckCell(midiNote) {
-        for (const [key, value] of neckCells.entries()) {
-          const { fretEl } = value;
-          if (Number(fretEl.dataset.note) === midiNote) {
-            return fretEl;
-          }
-        }
-        return null;
       }
 
       function refreshMidiOutputs() {
@@ -705,29 +426,10 @@
         refreshMidiOutputs();
       });
 
-      modeClassic.addEventListener("click", () => {
-        fretboard.classList.remove("hidden");
-        neckView.classList.add("hidden");
-      });
-
-      modeNeck.addEventListener("click", () => {
-        fretboard.classList.add("hidden");
-        neckView.classList.remove("hidden");
-      });
-
-      vibratoRate.addEventListener("input", () => {
-        vibratoValue.textContent = `${vibratoRate.value} Hz`;
-        if (vibratoActive && pitchMode === "center") {
-          stopVibrato();
-          startVibrato();
-        }
-      });
-
       window.addEventListener("keydown", handleKeyDown);
       window.addEventListener("keyup", handleKeyUp);
 
       renderFretboard();
-      renderNeckView();
       updateTuningDisplay();
       initMidi();
     </script>
