@@ -192,10 +192,10 @@
 
       .string-row {
         display: grid;
-        grid-template-columns: 90px 1fr;
-        gap: 12px;
+        grid-template-columns: 64px 1fr;
+        gap: 8px;
         align-items: center;
-        padding: 8px 10px;
+        padding: 6px 8px;
         border-bottom: 1px solid #141414;
       }
 
@@ -206,6 +206,8 @@
       .string-label {
         font-size: 0.85rem;
         color: #d6d6d6;
+        text-align: right;
+        padding-right: 4px;
       }
 
       .frets {
@@ -247,28 +249,30 @@
       }
 
       .classic-markers {
-        margin-top: 8px;
+        margin-top: 6px;
         display: grid;
-        grid-template-columns: 90px 1fr;
-        gap: 12px;
+        grid-template-columns: 64px 1fr;
+        gap: 8px;
         align-items: center;
       }
 
       .classic-markers-row {
         display: grid;
-        grid-template-columns: repeat(var(--fret-count), 1fr);
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(38px, 1fr);
         gap: 8px;
-        height: 10px;
+        height: 12px;
         transition: transform 0.15s ease;
       }
 
       .classic-markers-row span {
-        width: 6px;
-        height: 6px;
+        width: 8px;
+        height: 8px;
         border-radius: 999px;
-        background: #262626;
+        background: #4a4a4a;
         opacity: 0;
         justify-self: center;
+        box-shadow: 0 0 6px rgba(255, 255, 255, 0.2);
       }
 
       .classic-markers-row span.marker-dot {
@@ -426,6 +430,11 @@
               <label for="bend-range">Bend range</label>
               <input id="bend-range" type="range" min="1" max="12" value="2" step="1" />
               <span id="bend-value">2 st</span>
+            </div>
+            <div class="range-row">
+              <label for="transpose">Transpose</label>
+              <input id="transpose" type="range" min="-12" max="12" value="0" step="1" />
+              <span id="transpose-value">0 st</span>
             </div>
             <div class="range-row">
               <label for="zoom">Zoom</label>
@@ -714,6 +723,8 @@
       const soundFontStatus = document.getElementById("soundfont-status");
       const bendRange = document.getElementById("bend-range");
       const bendValue = document.getElementById("bend-value");
+      const transposeRange = document.getElementById("transpose");
+      const transposeValue = document.getElementById("transpose-value");
       const zoomRange = document.getElementById("zoom");
       const zoomValue = document.getElementById("zoom-value");
       const vibratoRate = document.getElementById("vibrato-rate");
@@ -731,6 +742,7 @@
       let vibratoTimer = null;
       let vibratoPhase = 0;
       let bendSemitones = Number(bendRange.value);
+      let semitoneTranspose = 0;
       let noteVelocity = 100;
       let soundFontEnabled = false;
       let sustainActive = false;
@@ -798,6 +810,13 @@
 
       function updateZoom() {
         applyScale();
+      }
+
+      function updateTranspose() {
+        semitoneTranspose = Number(transposeRange.value);
+        const label = semitoneTranspose === 0 ? "0 st" : `${semitoneTranspose > 0 ? "+" : ""}${semitoneTranspose} st`;
+        transposeValue.textContent = label;
+        updateTuningDisplay();
       }
 
       function populateSoundFontPrograms() {
@@ -1088,16 +1107,19 @@
         const rows = fretboard.querySelectorAll(".string-row");
         const transposeLabel =
           octaveTranspose === 0 ? "" : ` ${octaveTranspose >= 0 ? "+" : ""}${octaveTranspose}`;
+        const semitoneLabel =
+          semitoneTranspose === 0 ? "" : ` ${semitoneTranspose > 0 ? "+" : ""}${semitoneTranspose}st`;
 
         rows.forEach((rowEl, rowIndex) => {
           const labelEl = rowEl.querySelector(".string-label");
           const frets = rowEl.querySelectorAll(".fret");
           const stringInfo = tuning[rowIndex];
-          labelEl.textContent = `${stringInfo.name}${transposeLabel}`;
+          labelEl.textContent = `${stringInfo.name}${transposeLabel}${semitoneLabel}`;
 
           frets.forEach((fretEl) => {
             const fretNumber = Number(fretEl.dataset.fret);
-            const midiNote = stringInfo.base + fretNumber + octaveTranspose * 12;
+            const midiNote =
+              stringInfo.base + fretNumber + octaveTranspose * 12 + semitoneTranspose;
             fretEl.dataset.note = midiNote;
             const noteSpan = fretEl.querySelector("span");
             noteSpan.textContent = getNoteName(midiNote);
@@ -1106,7 +1128,7 @@
 
         neckLabelEls.forEach((labelEl, rowIndex) => {
           const stringInfo = tuning[rowIndex];
-          labelEl.textContent = `${stringInfo.name}${transposeLabel}`;
+          labelEl.textContent = `${stringInfo.name}${transposeLabel}${semitoneLabel}`;
         });
 
         updateNeckNotes();
@@ -1118,7 +1140,8 @@
 
         for (let stringIndex = 0; stringIndex < tuning.length; stringIndex += 1) {
           for (let fretIndex = 0; fretIndex < fretCount; fretIndex += 1) {
-            const midiNote = tuning[stringIndex].base + fretIndex + octaveTranspose * 12;
+            const midiNote =
+              tuning[stringIndex].base + fretIndex + octaveTranspose * 12 + semitoneTranspose;
             const cell = neckCells.get(`${stringIndex}-${fretIndex}`);
             if (!cell) continue;
             cell.fretEl.dataset.note = midiNote;
@@ -1205,6 +1228,40 @@
           }
         });
         sustainedNotes.clear();
+      }
+
+      function isNoteHeldByOthers(midiNote, pointerId) {
+        for (const value of activeNotes.values()) {
+          if (value === midiNote) return true;
+        }
+        for (const [id, data] of pointerNotes.entries()) {
+          if (id === pointerId) continue;
+          if (data.midiNote === midiNote) return true;
+        }
+        return false;
+      }
+
+      function isCellHeldByOthers(code, pointerId) {
+        if (!code) return false;
+        if (activeNotes.has(code)) return true;
+        for (const [id, data] of pointerNotes.entries()) {
+          if (id === pointerId) continue;
+          if (data.code === code) return true;
+        }
+        return false;
+      }
+
+      function releasePointerNote(data, pointerId) {
+        if (!data || data.midiNote == null) return;
+        if (!isCellHeldByOthers(data.code, pointerId)) {
+          data.cell.classList.remove("active");
+        }
+        if (sustainActive) {
+          sustainedNotes.add(data.midiNote);
+        } else if (!isNoteHeldByOthers(data.midiNote, pointerId)) {
+          sendMidi([0x80, data.midiNote, 0x00]);
+          soundFontNoteOff(data.midiNote);
+        }
       }
 
       function handleKeyDown(event) {
@@ -1348,8 +1405,35 @@
         const midiNote = Number(target.dataset.note);
         if (!Number.isFinite(midiNote)) return;
         event.preventDefault();
+        const existing = pointerNotes.get(event.pointerId);
+        if (existing && existing.midiNote === midiNote && existing.cell === target) return;
+        if (existing) {
+          releasePointerNote(existing, event.pointerId);
+        }
         pointerNotes.set(event.pointerId, { midiNote, cell: target, code: target.dataset.code || "" });
         target.setPointerCapture?.(event.pointerId);
+        target.classList.add("active");
+        sendMidi([0x90, midiNote, noteVelocity]);
+        soundFontNoteOn(midiNote, noteVelocity);
+      }
+
+      function handlePointerMove(event) {
+        if ((event.buttons & 1) !== 1) return;
+        const data = pointerNotes.get(event.pointerId);
+        if (!data) return;
+        const element = document.elementFromPoint(event.clientX, event.clientY);
+        const target = element ? element.closest(".fret, .neck-fret") : null;
+        const midiNote = target ? Number(target.dataset.note) : NaN;
+        if (!Number.isFinite(midiNote)) {
+          if (data.midiNote != null) {
+            releasePointerNote(data, event.pointerId);
+            pointerNotes.set(event.pointerId, { midiNote: null, cell: null, code: "" });
+          }
+          return;
+        }
+        if (data.midiNote === midiNote && data.cell === target) return;
+        releasePointerNote(data, event.pointerId);
+        pointerNotes.set(event.pointerId, { midiNote, cell: target, code: target.dataset.code || "" });
         target.classList.add("active");
         sendMidi([0x90, midiNote, noteVelocity]);
         soundFontNoteOn(midiNote, noteVelocity);
@@ -1358,17 +1442,8 @@
       function handlePointerUp(event) {
         const data = pointerNotes.get(event.pointerId);
         if (!data) return;
+        releasePointerNote(data, event.pointerId);
         pointerNotes.delete(event.pointerId);
-        if (data.code && activeNotes.has(data.code)) {
-          return;
-        }
-        data.cell.classList.remove("active");
-        if (sustainActive) {
-          sustainedNotes.add(data.midiNote);
-        } else {
-          sendMidi([0x80, data.midiNote, 0x00]);
-          soundFontNoteOff(data.midiNote);
-        }
       }
 
       function refreshMidiOutputs() {
@@ -1470,6 +1545,10 @@
         updateBendRange();
       });
 
+      transposeRange.addEventListener("input", () => {
+        updateTranspose();
+      });
+
       zoomRange.addEventListener("input", () => {
         updateZoom();
       });
@@ -1486,6 +1565,7 @@
       window.addEventListener("keyup", handleKeyUp);
       window.addEventListener("pointerup", handlePointerUp);
       window.addEventListener("pointercancel", handlePointerUp);
+      window.addEventListener("pointermove", handlePointerMove);
       window.addEventListener("resize", updateAutoScale);
       fretboard.addEventListener("pointerdown", handlePointerDown);
       neck.addEventListener("pointerdown", handlePointerDown);
@@ -1497,6 +1577,7 @@
       updateTuningDisplay();
       updateVelocityDisplay();
       updateBendRange();
+      updateTranspose();
       updateAutoScale();
       updateZoom();
       setView("classic");
