@@ -925,9 +925,7 @@
 
       function updateVelocityDisplay() {
         velocityDisplay.textContent = `Vel ${noteVelocity}`;
-        if (velocitySlider) {
-          velocitySlider.value = String(noteVelocity);
-        }
+        if (velocitySlider) velocitySlider.value = String(noteVelocity);
       }
 
       function updateCapsToggle() {
@@ -942,8 +940,12 @@
         }
       }
 
-      function toggleCapsLock() {
-        setCapsLockState(!capsLockOn);
+      // KEY FIX: sync from the real CapsLock modifier state (don't manually toggle on keydown)
+      function syncCapsLockFromEvent(event) {
+        // Only sync when the CapsLock key itself is involved, so the on-screen button can override
+        if (event.code !== "CapsLock") return;
+        const realCaps = event.getModifierState && event.getModifierState("CapsLock");
+        if (typeof realCaps === "boolean") setCapsLockState(realCaps);
       }
 
       function updateSustainState() {
@@ -980,9 +982,7 @@
         const availableW = window.innerWidth - 40;
         const availableH = window.innerHeight - 40;
         autoScale = Math.min(1, availableW / baseWidth, availableH / baseHeight);
-        if (!Number.isFinite(autoScale) || autoScale <= 0) {
-          autoScale = 1;
-        }
+        if (!Number.isFinite(autoScale) || autoScale <= 0) autoScale = 1;
         applyScale();
       }
 
@@ -992,7 +992,10 @@
 
       function updateTranspose() {
         semitoneTranspose = Number(transposeRange.value);
-        const label = semitoneTranspose === 0 ? "0 st" : `${semitoneTranspose > 0 ? "+" : ""}${semitoneTranspose} st`;
+        const label =
+          semitoneTranspose === 0
+            ? "0 st"
+            : `${semitoneTranspose > 0 ? "+" : ""}${semitoneTranspose} st`;
         transposeValue.textContent = label;
         updateTuningDisplay();
       }
@@ -1128,9 +1131,7 @@
           return;
         }
         const ctx = ensureAudioContext();
-        if (ctx.state === "suspended") {
-          await ctx.resume();
-        }
+        if (ctx.state === "suspended") await ctx.resume();
         const normalized = normalizeSoundFontUrl(DEFAULT_SOUNDFONT_URL);
         if (sf.ready && sf.lastUrl === normalized) {
           updateSoundFontStatus("Soundfont: ready.");
@@ -1152,9 +1153,7 @@
 
       function soundFontNoteOn(midiNote, velocity) {
         if (!soundFontEnabled || !sf.ready || !sf.synth) return;
-        if (audioCtx && audioCtx.state === "suspended") {
-          audioCtx.resume();
-        }
+        if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
         const v = Math.max(1, Math.min(127, Math.round(velocity)));
         sf.synth.midiNoteOn(0, midiNote, v);
       }
@@ -1210,9 +1209,7 @@
 
         for (let fretIndex = 0; fretIndex < fretCount; fretIndex += 1) {
           const marker = document.createElement("span");
-          if (markerFretSet.has(fretIndex)) {
-            marker.classList.add("marker-dot");
-          }
+          if (markerFretSet.has(fretIndex)) marker.classList.add("marker-dot");
           classicMarkersRow.appendChild(marker);
         }
       }
@@ -1248,15 +1245,13 @@
             const fretEl = document.createElement("div");
             fretEl.className = "neck-fret";
             fretEl.dataset.fret = fretIndex;
-            if (fretIndex === 0) {
-              fretEl.classList.add("open");
-            }
-            if (markerFretsSet.has(fretIndex)) {
-              fretEl.classList.add("marker");
-            }
+            if (fretIndex === 0) fretEl.classList.add("open");
+            if (markerFretsSet.has(fretIndex)) fretEl.classList.add("marker");
+
             const noteDot = document.createElement("div");
             noteDot.className = "note-dot";
             fretEl.appendChild(noteDot);
+
             stringRow.appendChild(fretEl);
             neckCells.set(`${rowIndex}-${fretIndex}`, { fretEl, noteDot });
 
@@ -1273,9 +1268,7 @@
         for (let fretIndex = 0; fretIndex < fretCount; fretIndex += 1) {
           const marker = document.createElement("div");
           const markerLabel = markerLabelMap.get(fretIndex);
-          if (markerLabel) {
-            marker.textContent = markerLabel;
-          }
+          if (markerLabel) marker.textContent = markerLabel;
           edgeLabels.appendChild(marker);
         }
       }
@@ -1283,10 +1276,8 @@
       function updateTuningDisplay() {
         const tuning = capsLockOn ? tuningCaps : tuningNormal;
         const rows = fretboard.querySelectorAll(".string-row");
-        const transposeLabel =
-          octaveTranspose === 0 ? "" : ` ${octaveTranspose >= 0 ? "+" : ""}${octaveTranspose}`;
-        const semitoneLabel =
-          semitoneTranspose === 0 ? "" : ` ${semitoneTranspose > 0 ? "+" : ""}${semitoneTranspose}st`;
+        const transposeLabel = octaveTranspose === 0 ? "" : ` ${octaveTranspose >= 0 ? "+" : ""}${octaveTranspose}`;
+        const semitoneLabel = semitoneTranspose === 0 ? "" : ` ${semitoneTranspose > 0 ? "+" : ""}${semitoneTranspose}st`;
 
         rows.forEach((rowEl, rowIndex) => {
           const labelEl = rowEl.querySelector(".string-label");
@@ -1296,8 +1287,7 @@
 
           frets.forEach((fretEl) => {
             const fretNumber = Number(fretEl.dataset.fret);
-            const midiNote =
-              stringInfo.base + fretNumber + octaveTranspose * 12 + semitoneTranspose;
+            const midiNote = stringInfo.base + fretNumber + octaveTranspose * 12 + semitoneTranspose;
             fretEl.dataset.note = midiNote;
             const noteSpan = fretEl.querySelector("span");
             noteSpan.textContent = getNoteName(midiNote);
@@ -1318,8 +1308,7 @@
 
         for (let stringIndex = 0; stringIndex < tuning.length; stringIndex += 1) {
           for (let fretIndex = 0; fretIndex < fretCount; fretIndex += 1) {
-            const midiNote =
-              tuning[stringIndex].base + fretIndex + octaveTranspose * 12 + semitoneTranspose;
+            const midiNote = tuning[stringIndex].base + fretIndex + octaveTranspose * 12 + semitoneTranspose;
             const cell = neckCells.get(`${stringIndex}-${fretIndex}`);
             if (!cell) continue;
             cell.fretEl.dataset.note = midiNote;
@@ -1329,9 +1318,7 @@
       }
 
       function sendMidi(message) {
-        if (midiOutput) {
-          midiOutput.send(message);
-        }
+        if (midiOutput) midiOutput.send(message);
       }
 
       function sendPitchBend(value) {
@@ -1348,9 +1335,7 @@
           vibratoTimer = null;
         }
         vibratoPhase = 0;
-        if (pitchMode === "center") {
-          sendPitchBend(8192);
-        }
+        if (pitchMode === "center") sendPitchBend(8192);
       }
 
       function startVibrato() {
@@ -1370,11 +1355,9 @@
         bendSemitones = Number(bendRange.value);
         bendValue.textContent = `${bendSemitones} st`;
         sendPitchBendSensitivity(bendSemitones);
-        if (pitchMode === "left") {
-          sendPitchBend(0);
-        } else if (pitchMode === "right") {
-          sendPitchBend(16383);
-        }
+        if (pitchMode === "left") sendPitchBend(0);
+        else if (pitchMode === "right") sendPitchBend(16383);
+
         if (vibratoActive && pitchMode === "center") {
           stopVibrato();
           startVibrato();
@@ -1382,12 +1365,8 @@
       }
 
       function isNoteHeld(midiNote) {
-        for (const value of activeNotes.values()) {
-          if (value === midiNote) return true;
-        }
-        for (const data of pointerNotes.values()) {
-          if (data.midiNote === midiNote) return true;
-        }
+        for (const value of activeNotes.values()) if (value === midiNote) return true;
+        for (const data of pointerNotes.values()) if (data.midiNote === midiNote) return true;
         return false;
       }
 
@@ -1402,9 +1381,7 @@
       }
 
       function isNoteHeldByOthers(midiNote, pointerId) {
-        for (const value of activeNotes.values()) {
-          if (value === midiNote) return true;
-        }
+        for (const value of activeNotes.values()) if (value === midiNote) return true;
         for (const [id, data] of pointerNotes.entries()) {
           if (id === pointerId) continue;
           if (data.midiNote === midiNote) return true;
@@ -1424,9 +1401,7 @@
 
       function releasePointerNote(data, pointerId) {
         if (!data || data.midiNote == null) return;
-        if (!isCellHeldByOthers(data.code, pointerId)) {
-          data.cell.classList.remove("active");
-        }
+        if (!isCellHeldByOthers(data.code, pointerId)) data.cell.classList.remove("active");
         if (sustainActive) {
           sustainedNotes.add(data.midiNote);
         } else if (!isNoteHeldByOthers(data.midiNote, pointerId)) {
@@ -1436,12 +1411,32 @@
       }
 
       function handleKeyDown(event) {
-        if (event.code === "CapsLock" && !event.repeat) {
-          toggleCapsLock();
+        // FIX: sync caps only from actual CapsLock modifier state (no manual toggling)
+        syncCapsLockFromEvent(event);
+
+        if (event.code === "CapsLock") {
+          event.preventDefault();
           return;
         }
 
-        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space", "Tab", "Delete", "Backspace", "Enter", "NumpadEnter", "ControlLeft", "ControlRight", "AltLeft", "AltRight"].includes(event.code)) {
+        if (
+          [
+            "ArrowLeft",
+            "ArrowRight",
+            "ArrowUp",
+            "ArrowDown",
+            "Space",
+            "Tab",
+            "Delete",
+            "Backspace",
+            "Enter",
+            "NumpadEnter",
+            "ControlLeft",
+            "ControlRight",
+            "AltLeft",
+            "AltRight",
+          ].includes(event.code)
+        ) {
           event.preventDefault();
         }
 
@@ -1483,9 +1478,7 @@
 
         if (event.code === "Enter" || event.code === "NumpadEnter") {
           vibratoActive = true;
-          if (pitchMode === "center") {
-            startVibrato();
-          }
+          if (pitchMode === "center") startVibrato();
           return;
         }
 
@@ -1510,9 +1503,7 @@
         }
 
         if (event.code === "Delete" || event.code === "Backspace") {
-          if (!event.repeat) {
-            toggleSlantMode();
-          }
+          if (!event.repeat) toggleSlantMode();
           return;
         }
 
@@ -1522,32 +1513,29 @@
         const midiNote = Number(cell.dataset.note);
         activeNotes.set(event.code, midiNote);
         cell.classList.add("active");
+
         const neckCell = neckCellsByCode.get(event.code);
-        if (neckCell) {
-          neckCell.classList.add("active");
-        }
+        if (neckCell) neckCell.classList.add("active");
+
         sendMidi([0x90, midiNote, noteVelocity]);
         soundFontNoteOn(midiNote, noteVelocity);
       }
 
       function handleKeyUp(event) {
+        // keep UI in sync if CapsLock state changes
+        syncCapsLockFromEvent(event);
+
         if (event.code === "ArrowLeft" && pitchMode === "left") {
           pitchMode = "center";
-          if (vibratoActive) {
-            startVibrato();
-          } else {
-            sendPitchBend(8192);
-          }
+          if (vibratoActive) startVibrato();
+          else sendPitchBend(8192);
           return;
         }
 
         if (event.code === "ArrowRight" && pitchMode === "right") {
           pitchMode = "center";
-          if (vibratoActive) {
-            startVibrato();
-          } else {
-            sendPitchBend(8192);
-          }
+          if (vibratoActive) startVibrato();
+          else sendPitchBend(8192);
           return;
         }
 
@@ -1565,18 +1553,17 @@
 
         const midiNote = activeNotes.get(event.code);
         if (midiNote === undefined) return;
+
         activeNotes.delete(event.code);
+
         const cell = cellsByCode.get(event.code);
-        if (cell) {
-          cell.classList.remove("active");
-        }
+        if (cell) cell.classList.remove("active");
+
         const neckCell = neckCellsByCode.get(event.code);
-        if (neckCell) {
-          neckCell.classList.remove("active");
-        }
-        if (sustainActive) {
-          sustainedNotes.add(midiNote);
-        } else {
+        if (neckCell) neckCell.classList.remove("active");
+
+        if (sustainActive) sustainedNotes.add(midiNote);
+        else {
           sendMidi([0x80, midiNote, 0x00]);
           soundFontNoteOff(midiNote);
         }
@@ -1588,11 +1575,11 @@
         const midiNote = Number(target.dataset.note);
         if (!Number.isFinite(midiNote)) return;
         event.preventDefault();
+
         const existing = pointerNotes.get(event.pointerId);
         if (existing && existing.midiNote === midiNote && existing.cell === target) return;
-        if (existing) {
-          releasePointerNote(existing, event.pointerId);
-        }
+        if (existing) releasePointerNote(existing, event.pointerId);
+
         pointerNotes.set(event.pointerId, { midiNote, cell: target, code: target.dataset.code || "" });
         target.setPointerCapture?.(event.pointerId);
         target.classList.add("active");
@@ -1604,9 +1591,11 @@
         if ((event.buttons & 1) !== 1) return;
         const data = pointerNotes.get(event.pointerId);
         if (!data) return;
+
         const element = document.elementFromPoint(event.clientX, event.clientY);
         const target = element ? element.closest(".fret, .neck-fret") : null;
         const midiNote = target ? Number(target.dataset.note) : NaN;
+
         if (!Number.isFinite(midiNote)) {
           if (data.midiNote != null) {
             releasePointerNote(data, event.pointerId);
@@ -1614,9 +1603,12 @@
           }
           return;
         }
+
         if (data.midiNote === midiNote && data.cell === target) return;
+
         releasePointerNote(data, event.pointerId);
         pointerNotes.set(event.pointerId, { midiNote, cell: target, code: target.dataset.code || "" });
+
         target.classList.add("active");
         sendMidi([0x90, midiNote, noteVelocity]);
         soundFontNoteOn(midiNote, noteVelocity);
@@ -1673,9 +1665,7 @@
       midiOutputSelect.addEventListener("change", (event) => {
         const outputId = event.target.value;
         midiOutput = midiAccess?.outputs.get(outputId) || null;
-        midiStatus.textContent = midiOutput
-          ? `MIDI: ${midiOutput.name || "connected"}.`
-          : "MIDI: choose output.";
+        midiStatus.textContent = midiOutput ? `MIDI: ${midiOutput.name || "connected"}.` : "MIDI: choose output.";
         sendPitchBendSensitivity(bendSemitones);
       });
 
@@ -1703,55 +1693,27 @@
         setSlantEnabled(!fretboard.classList.contains("slanted"));
       }
 
-      modeClassic.addEventListener("click", () => {
-        setView("classic");
-      });
+      modeClassic.addEventListener("click", () => setView("classic"));
+      modeNeck.addEventListener("click", () => setView("neck"));
+      toggleSlant.addEventListener("click", () => toggleSlantMode());
 
-      modeNeck.addEventListener("click", () => {
-        setView("neck");
-      });
+      soundFontToggle.addEventListener("click", () => setSoundFontEnabled(!soundFontEnabled));
+      soundFontProgram.addEventListener("change", () => applySoundFontProgram(Number(soundFontProgram.value)));
 
-      toggleSlant.addEventListener("click", () => {
-        toggleSlantMode();
-      });
-
-      soundFontToggle.addEventListener("click", () => {
-        setSoundFontEnabled(!soundFontEnabled);
-      });
-
-      soundFontProgram.addEventListener("change", () => {
-        const program = Number(soundFontProgram.value);
-        applySoundFontProgram(program);
-      });
-
-      capsToggle.addEventListener("click", () => {
-        toggleCapsLock();
-      });
+      // On-screen Hi/Lo toggle remains independent from physical CapsLock state
+      capsToggle.addEventListener("click", () => setCapsLockState(!capsLockOn));
 
       sustainToggle.addEventListener("click", () => {
         sustainLatched = !sustainLatched;
         updateSustainState();
       });
 
-      transposeDown.addEventListener("click", () => {
-        adjustTranspose(-1);
-      });
+      transposeDown.addEventListener("click", () => adjustTranspose(-1));
+      transposeUp.addEventListener("click", () => adjustTranspose(1));
 
-      transposeUp.addEventListener("click", () => {
-        adjustTranspose(1);
-      });
-
-      bendRange.addEventListener("input", () => {
-        updateBendRange();
-      });
-
-      transposeRange.addEventListener("input", () => {
-        updateTranspose();
-      });
-
-      zoomRange.addEventListener("input", () => {
-        updateZoom();
-      });
+      bendRange.addEventListener("input", () => updateBendRange());
+      transposeRange.addEventListener("input", () => updateTranspose());
+      zoomRange.addEventListener("input", () => updateZoom());
 
       vibratoRate.addEventListener("input", () => {
         vibratoValue.textContent = `${vibratoRate.value} Hz`;
@@ -1775,9 +1737,7 @@
       fretboard.addEventListener("pointerdown", handlePointerDown);
       neck.addEventListener("pointerdown", handlePointerDown);
       settings.addEventListener("toggle", updateAutoScale);
-      closeSettings.addEventListener("click", () => {
-        settings.open = false;
-      });
+      closeSettings.addEventListener("click", () => (settings.open = false));
 
       populateSoundFontPrograms();
       renderFretboard();
