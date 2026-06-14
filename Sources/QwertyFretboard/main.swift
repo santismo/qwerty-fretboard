@@ -5,7 +5,6 @@ import CoreMIDI
 
 @main
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let firstLaunchKey = "didShowInitialSettingsStatusMenuV2"
     private let engine = FretboardEngine()
     private var statusItem: NSStatusItem!
     private var settingsWindow: SettingsWindowController?
@@ -26,13 +25,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.overlayWindow?.refresh()
             }
         }
-        setupStatusItem()
-        installEventTap()
-        refreshMenuBar()
-        if !UserDefaults.standard.bool(forKey: firstLaunchKey) {
-            UserDefaults.standard.set(true, forKey: firstLaunchKey)
-            toggleSettings()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.setupStatusItem()
+            self.installEventTap()
+            self.refreshMenuBar()
+            self.showSettings()
         }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        DispatchQueue.main.async { [weak self] in
+            self?.showSettings()
+        }
+        return true
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -46,14 +52,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor private func setupStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem = NSStatusBar.system.statusItem(withLength: 142)
+        statusItem.isVisible = true
+        statusItem.autosaveName = "QwertyFretboardStatusItem"
         statusItem.button?.toolTip = "Qwerty Fretboard"
-        statusItem.button?.highlight(true)
+        statusItem.button?.font = .systemFont(ofSize: 13, weight: .semibold)
+        statusItem.button?.alignment = .center
         statusItem.menu = makeStatusMenu()
     }
 
     @MainActor private func refreshMenuBar() {
-        statusItem.button?.title = engine.isMidiModeActive ? "⌨ QF ●" : "⌨ QF"
+        statusItem.button?.title = engine.isMidiModeActive ? "Qwerty Fretboard ●" : "Qwerty Fretboard"
         statusItem.button?.image = nil
         statusItem.button?.imagePosition = .noImage
         statusItem.menu = makeStatusMenu()
@@ -66,10 +75,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor @objc private func toggleSettings() {
+        showSettings()
+    }
+
+    @MainActor private func showSettings() {
         if settingsWindow == nil {
             settingsWindow = SettingsWindowController(engine: engine)
         }
-        settingsWindow?.toggle(relativeTo: statusItem.button)
+        settingsWindow?.show(relativeTo: statusItem?.button)
     }
 
     @MainActor @objc private func toggleMidiModeFromMenu() {
@@ -566,20 +579,16 @@ final class SettingsWindowController: NSWindowController {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func toggle(relativeTo button: NSStatusBarButton?) {
+    func show(relativeTo button: NSStatusBarButton?) {
         guard let window else { return }
-        if window.isVisible {
-            window.orderOut(nil)
+        if let buttonWindow = button?.window {
+            let buttonFrame = buttonWindow.convertToScreen(button?.frame ?? .zero)
+            window.setFrameTopLeftPoint(NSPoint(x: buttonFrame.minX - 300, y: buttonFrame.minY - 8))
         } else {
-            if let buttonWindow = button?.window {
-                let buttonFrame = buttonWindow.convertToScreen(button?.frame ?? .zero)
-                window.setFrameTopLeftPoint(NSPoint(x: buttonFrame.minX - 300, y: buttonFrame.minY - 8))
-            } else {
-                window.center()
-            }
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            window.center()
         }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func refresh() {
