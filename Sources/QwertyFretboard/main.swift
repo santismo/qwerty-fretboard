@@ -4,7 +4,20 @@ import Carbon
 import CoreMIDI
 
 @main
+struct QwertyFretboardMain {
+    @MainActor
+    static func main() {
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        AppDelegate.retainedDelegate = delegate
+        app.run()
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    @MainActor
+    fileprivate static var retainedDelegate: AppDelegate?
     private let engine = FretboardEngine()
     private var statusItem: NSStatusItem!
     private var settingsWindow: SettingsWindowController?
@@ -12,7 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    @MainActor func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         setupApplicationMenu()
         engine.onStateChanged = { [weak self] in
@@ -26,13 +39,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.overlayWindow?.refresh()
             }
         }
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.setupStatusItem()
-            self.installEventTap()
-            self.refreshMenuBar()
-            self.showSettings()
-            NSApp.activate(ignoringOtherApps: true)
+        setupStatusItem()
+        refreshMenuBar()
+        showSettings()
+        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.showSettings()
+            self?.installEventTap()
         }
     }
 
@@ -84,7 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if settingsWindow == nil {
             settingsWindow = SettingsWindowController(engine: engine)
         }
-        settingsWindow?.show(relativeTo: statusItem?.button)
+        settingsWindow?.show()
     }
 
     @MainActor @objc private func toggleMidiModeFromMenu() {
@@ -582,12 +595,31 @@ final class SettingsWindowController: NSWindowController {
     private let transposeSlider = NSSlider(value: 0, minValue: -12, maxValue: 12, target: nil, action: nil)
     private let bendSlider = NSSlider(value: 2, minValue: 1, maxValue: 12, target: nil, action: nil)
     private let valuesLabel = NSTextField(labelWithString: "")
+    private let fretboardPreview: FretboardView
 
     init(engine: FretboardEngine) {
         self.engine = engine
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 430, height: 520), styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "Qwerty Fretboard"
+        self.fretboardPreview = FretboardView(engine: engine)
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        let initialFrame = NSRect(
+            x: screen.minX + 80,
+            y: max(screen.minY + 40, screen.maxY - 760),
+            width: min(820, screen.width - 120),
+            height: min(720, screen.height - 80)
+        )
+        let window = NSWindow(
+            contentRect: initialFrame,
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Qwerty Fretboard Settings"
         window.isReleasedWhenClosed = false
+        window.isRestorable = false
+        window.collectionBehavior = [.moveToActiveSpace, .managed]
+        window.level = .floating
+        window.hidesOnDeactivate = false
+        window.isMovableByWindowBackground = true
         super.init(window: window)
         buildUI()
         refresh()
@@ -597,15 +629,23 @@ final class SettingsWindowController: NSWindowController {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func show(relativeTo button: NSStatusBarButton?) {
+    func show() {
         guard let window else { return }
-        if let buttonWindow = button?.window {
-            let buttonFrame = buttonWindow.convertToScreen(button?.frame ?? .zero)
-            window.setFrameTopLeftPoint(NSPoint(x: buttonFrame.minX - 300, y: buttonFrame.minY - 8))
-        } else {
-            window.center()
-        }
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        let frame = NSRect(
+            x: screen.minX + 80,
+            y: max(screen.minY + 40, screen.maxY - window.frame.height - 60),
+            width: min(window.frame.width, screen.width - 120),
+            height: min(window.frame.height, screen.height - 80)
+        )
+        window.setFrame(frame, display: true)
+        window.deminiaturize(nil)
+        window.setIsVisible(true)
+        window.makeMain()
         window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+        NSApp.unhide(nil)
+        NSApp.arrangeInFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -617,16 +657,21 @@ final class SettingsWindowController: NSWindowController {
         bendSlider.integerValue = engine.bendRange
         statusLabel.stringValue = "\(engine.modeLabel)\nMIDI source: qwerty-fretboard\n\(engine.permissionStatus)\nHotkey: Control + Option + Command + Space"
         valuesLabel.stringValue = "Velocity \(engine.velocity)   Transpose \(engine.semitoneTranspose) st   Bend \(engine.bendRange) st"
+        fretboardPreview.needsDisplay = true
     }
 
     private func buildUI() {
         guard let window else { return }
+        let root = NSView()
+        root.translatesAutoresizingMaskIntoConstraints = false
+        window.contentView = root
+
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.spacing = 14
         stack.edgeInsets = NSEdgeInsets(top: 18, left: 18, bottom: 18, right: 18)
         stack.translatesAutoresizingMaskIntoConstraints = false
-        window.contentView = stack
+        root.addSubview(stack)
 
         let title = NSTextField(labelWithString: "Qwerty Fretboard")
         title.font = .systemFont(ofSize: 20, weight: .semibold)
@@ -649,6 +694,10 @@ final class SettingsWindowController: NSWindowController {
         addSlider(stack, title: "Transpose", slider: transposeSlider, action: #selector(changeTranspose))
         addSlider(stack, title: "Pitch bend range", slider: bendSlider, action: #selector(changeBend))
         stack.addArrangedSubview(valuesLabel)
+
+        fretboardPreview.translatesAutoresizingMaskIntoConstraints = false
+        stack.addArrangedSubview(fretboardPreview)
+        fretboardPreview.heightAnchor.constraint(equalToConstant: 230).isActive = true
 
         let panic = NSButton(title: "Panic / All Notes Off", target: self, action: #selector(panic))
         panic.bezelStyle = .rounded
@@ -679,10 +728,10 @@ final class SettingsWindowController: NSWindowController {
         stack.addArrangedSubview(quit)
 
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: window.contentView!.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: window.contentView!.bottomAnchor)
+            stack.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: root.topAnchor),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: root.bottomAnchor)
         ])
     }
 
