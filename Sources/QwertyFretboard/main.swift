@@ -5,6 +5,7 @@ import CoreMIDI
 
 @main
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let firstLaunchKey = "didShowInitialSettings"
     private let engine = FretboardEngine()
     private var statusItem: NSStatusItem!
     private var settingsWindow: SettingsWindowController?
@@ -28,6 +29,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusItem()
         installEventTap()
         refreshMenuBar()
+        if !UserDefaults.standard.bool(forKey: firstLaunchKey) {
+            UserDefaults.standard.set(true, forKey: firstLaunchKey)
+            toggleSettings()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -41,16 +46,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor private func setupStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem = NSStatusBar.system.statusItem(withLength: 58)
         statusItem.button?.target = self
         statusItem.button?.action = #selector(toggleSettings)
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        statusItem.button?.toolTip = "Qwerty Fretboard"
     }
 
     @MainActor private func refreshMenuBar() {
-        statusItem.button?.title = ""
+        statusItem.button?.title = "QF"
         statusItem.button?.image = KeyboardIcon.make(active: engine.isMidiModeActive)
-        statusItem.button?.imagePosition = .imageOnly
+        statusItem.button?.imagePosition = .imageLeft
         if engine.showOverlay && engine.isMidiModeActive {
             showOverlay()
         } else {

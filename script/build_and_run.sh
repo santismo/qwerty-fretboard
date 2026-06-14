@@ -19,10 +19,15 @@ pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 swift build
 BUILD_BINARY="$(swift build --show-bin-path)/$PRODUCT_NAME"
 
+if [[ ! -f "$ROOT_DIR/Resources/AppIcon.icns" ]]; then
+  swift "$ROOT_DIR/script/generate_icon.swift"
+fi
+
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
+cp "$ROOT_DIR/Resources/AppIcon.icns" "$APP_RESOURCES/AppIcon.icns"
 
 cat >"$APP_CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -39,6 +44,8 @@ cat >"$APP_CONTENTS/Info.plist" <<PLIST
   <string>$APP_NAME</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>LSUIElement</key>
