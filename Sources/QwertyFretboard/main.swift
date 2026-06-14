@@ -67,17 +67,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor private func setupStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: 164)
+        statusItem = NSStatusBar.system.statusItem(withLength: 34)
         statusItem.isVisible = true
         statusItem.autosaveName = "QwertyFretboardStatusItem"
         statusItem.button?.toolTip = "Qwerty Fretboard"
-        statusItem.button?.font = .systemFont(ofSize: 13, weight: .semibold)
+        statusItem.button?.font = .systemFont(ofSize: 17, weight: .semibold)
         statusItem.button?.alignment = .center
         statusItem.menu = makeStatusMenu()
     }
 
     @MainActor private func refreshMenuBar() {
-        statusItem.button?.title = engine.isMidiModeActive ? "Qwerty Fretboard ●" : "Qwerty Fretboard"
+        statusItem.button?.title = engine.isMidiModeActive ? "⌨●" : "⌨"
         statusItem.button?.image = nil
         statusItem.button?.imagePosition = .noImage
         statusItem.menu = makeStatusMenu()
@@ -607,7 +607,8 @@ final class SettingsWindowController: NSWindowController {
             width: min(820, screen.width - 120),
             height: min(720, screen.height - 80)
         )
-        let window = NSWindow(
+        let window = KeyboardCaptureWindow(
+            engine: engine,
             contentRect: initialFrame,
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
@@ -768,6 +769,49 @@ final class SettingsWindowController: NSWindowController {
     }
 }
 
+final class KeyboardCaptureWindow: NSWindow {
+    private let engine: FretboardEngine
+
+    init(engine: FretboardEngine, contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
+        self.engine = engine
+        super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        guard engine.isMidiModeActive else {
+            super.sendEvent(event)
+            return
+        }
+
+        let handled: Bool
+        switch event.type {
+        case .keyDown:
+            handled = engine.handleKeyDown(keyCode: CGKeyCode(event.keyCode), repeatEvent: event.isARepeat)
+        case .keyUp:
+            handled = engine.handleKeyUp(keyCode: CGKeyCode(event.keyCode))
+        case .flagsChanged:
+            handled = engine.handleFlagsChanged(keyCode: CGKeyCode(event.keyCode), flags: event.modifierFlags.cgEventFlags)
+        default:
+            handled = false
+        }
+
+        if !handled {
+            super.sendEvent(event)
+        }
+    }
+}
+
+private extension NSEvent.ModifierFlags {
+    var cgEventFlags: CGEventFlags {
+        var flags = CGEventFlags()
+        if contains(.control) { flags.insert(.maskControl) }
+        if contains(.option) { flags.insert(.maskAlternate) }
+        if contains(.command) { flags.insert(.maskCommand) }
+        if contains(.shift) { flags.insert(.maskShift) }
+        return flags
+    }
+}
+
 final class FretboardOverlayWindow: NSWindow {
     private let overlayView: FretboardOverlayContentView
 
@@ -776,11 +820,11 @@ final class FretboardOverlayWindow: NSWindow {
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 900, height: 600)
         super.init(
             contentRect: NSRect(x: screenFrame.midX - 380, y: screenFrame.minY + 70, width: 760, height: 315),
-            styleMask: [.titled, .closable, .miniaturizable],
+            styleMask: [.borderless, .resizable],
             backing: .buffered,
             defer: false
         )
-        title = "Qwerty Fretboard Mini"
+        title = ""
         isOpaque = true
         backgroundColor = NSColor(calibratedWhite: 0.05, alpha: 0.98)
         level = .floating
@@ -788,8 +832,23 @@ final class FretboardOverlayWindow: NSWindow {
         isMovableByWindowBackground = true
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
+        minSize = NSSize(width: 280, height: 130)
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         contentView = overlayView
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        if !overlayView.handleWindowEvent(event) {
+            super.sendEvent(event)
+        }
+    }
+
+    override var canBecomeKey: Bool {
+        true
+    }
+
+    override var canBecomeMain: Bool {
+        true
     }
 
     func show() {
@@ -805,12 +864,11 @@ final class FretboardOverlayWindow: NSWindow {
 final class FretboardOverlayContentView: NSView {
     private let engine: FretboardEngine
     private let listenButton = NSButton(title: "", target: nil, action: nil)
-    private let statusLabel = NSTextField(labelWithString: "")
     private let fretboardView: FretboardView
 
     init(engine: FretboardEngine) {
         self.engine = engine
-        self.fretboardView = FretboardView(engine: engine)
+        self.fretboardView = FretboardView(engine: engine, showsFooter: false)
         super.init(frame: .zero)
         buildUI()
         refresh()
@@ -821,10 +879,23 @@ final class FretboardOverlayContentView: NSView {
     }
 
     func refresh() {
-        listenButton.title = engine.isMidiModeActive ? "● LISTENING" : "● LISTEN"
-        listenButton.contentTintColor = engine.isMidiModeActive ? .systemRed : .secondaryLabelColor
-        statusLabel.stringValue = engine.isMidiModeActive ? "Keyboard capture on. Played keys send MIDI and are muted." : "Keyboard capture off. Press Listen to play MIDI from QWERTY."
+        listenButton.title = "●"
+        listenButton.contentTintColor = engine.isMidiModeActive ? .systemRed : .white
         fretboardView.needsDisplay = true
+    }
+
+    func handleWindowEvent(_ event: NSEvent) -> Bool {
+        guard engine.isMidiModeActive else { return false }
+        switch event.type {
+        case .keyDown:
+            return engine.handleKeyDown(keyCode: CGKeyCode(event.keyCode), repeatEvent: event.isARepeat)
+        case .keyUp:
+            return engine.handleKeyUp(keyCode: CGKeyCode(event.keyCode))
+        case .flagsChanged:
+            return engine.handleFlagsChanged(keyCode: CGKeyCode(event.keyCode), flags: event.modifierFlags.cgEventFlags)
+        default:
+            return false
+        }
     }
 
     private func buildUI() {
@@ -838,33 +909,22 @@ final class FretboardOverlayContentView: NSView {
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
 
-        let topRow = NSStackView()
-        topRow.orientation = .horizontal
-        topRow.spacing = 10
-        topRow.alignment = .centerY
-
         listenButton.target = self
         listenButton.action = #selector(toggleListening)
         listenButton.bezelStyle = .rounded
         listenButton.controlSize = .large
-        topRow.addArrangedSubview(listenButton)
-
-        statusLabel.lineBreakMode = .byTruncatingTail
-        statusLabel.textColor = .secondaryLabelColor
-        topRow.addArrangedSubview(statusLabel)
-
-        stack.addArrangedSubview(topRow)
+        stack.addArrangedSubview(listenButton)
 
         fretboardView.translatesAutoresizingMaskIntoConstraints = false
         stack.addArrangedSubview(fretboardView)
-        fretboardView.heightAnchor.constraint(equalToConstant: 230).isActive = true
 
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor),
             stack.topAnchor.constraint(equalTo: topAnchor),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor),
-            listenButton.widthAnchor.constraint(equalToConstant: 132)
+            listenButton.widthAnchor.constraint(equalToConstant: 42),
+            listenButton.heightAnchor.constraint(equalToConstant: 30)
         ])
     }
 
@@ -875,9 +935,11 @@ final class FretboardOverlayContentView: NSView {
 
 final class FretboardView: NSView {
     private let engine: FretboardEngine
+    private let showsFooter: Bool
 
-    init(engine: FretboardEngine) {
+    init(engine: FretboardEngine, showsFooter: Bool = true) {
         self.engine = engine
+        self.showsFooter = showsFooter
         super.init(frame: .zero)
         wantsLayer = true
     }
@@ -892,8 +954,9 @@ final class FretboardView: NSView {
 
         let margin: CGFloat = 18
         let labelWidth: CGFloat = 52
-        let bottomBarHeight: CGFloat = 34
-        let rowHeight: CGFloat = 38
+        let bottomBarHeight: CGFloat = showsFooter ? 34 : 0
+        let availableHeight = max(80, bounds.height - margin * 2 - bottomBarHeight - (showsFooter ? 0 : 4))
+        let rowHeight: CGFloat = min(38, max(20, (availableHeight - 3 * 8) / 4))
         let gap: CGFloat = 8
         let fretCount = 11
         let cellWidth = (bounds.width - margin * 2 - labelWidth - CGFloat(fretCount - 1) * gap) / CGFloat(fretCount)
@@ -920,17 +983,19 @@ final class FretboardView: NSView {
             }
         }
 
-        let barRect = NSRect(x: margin, y: margin, width: bounds.width - margin * 2, height: bottomBarHeight)
-        NSColor(calibratedWhite: 0.10, alpha: 0.95).setFill()
-        NSBezierPath(roundedRect: barRect, xRadius: 8, yRadius: 8).fill()
-        KeyboardIcon.draw(in: NSRect(x: barRect.minX + 10, y: barRect.minY + 8, width: 24, height: 18), active: true, template: false)
-        drawText(
-            engine.isMidiModeActive ? "qwerty-fretboard MIDI  •  listening" : "qwerty-fretboard MIDI  •  press Listen to capture keys",
-            in: NSRect(x: barRect.minX + 42, y: barRect.minY + 8, width: barRect.width - 52, height: 18),
-            color: .white,
-            size: 11,
-            alignment: .left
-        )
+        if showsFooter {
+            let barRect = NSRect(x: margin, y: margin, width: bounds.width - margin * 2, height: bottomBarHeight)
+            NSColor(calibratedWhite: 0.10, alpha: 0.95).setFill()
+            NSBezierPath(roundedRect: barRect, xRadius: 8, yRadius: 8).fill()
+            KeyboardIcon.draw(in: NSRect(x: barRect.minX + 10, y: barRect.minY + 8, width: 24, height: 18), active: true, template: false)
+            drawText(
+                engine.isMidiModeActive ? "qwerty-fretboard MIDI  •  listening" : "qwerty-fretboard MIDI  •  press Listen to capture keys",
+                in: NSRect(x: barRect.minX + 42, y: barRect.minY + 8, width: barRect.width - 52, height: 18),
+                color: .white,
+                size: 11,
+                alignment: .left
+            )
+        }
     }
 
     private func drawText(_ text: String, in rect: NSRect, color: NSColor, size: CGFloat, alignment: NSTextAlignment) {
