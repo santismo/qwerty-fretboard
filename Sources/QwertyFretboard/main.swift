@@ -5,7 +5,7 @@ import CoreMIDI
 
 @main
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let firstLaunchKey = "didShowInitialSettings"
+    private let firstLaunchKey = "didShowInitialSettingsStatusMenuV2"
     private let engine = FretboardEngine()
     private var statusItem: NSStatusItem!
     private var settingsWindow: SettingsWindowController?
@@ -46,17 +46,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor private func setupStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: 58)
-        statusItem.button?.target = self
-        statusItem.button?.action = #selector(toggleSettings)
-        statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.toolTip = "Qwerty Fretboard"
+        statusItem.button?.highlight(true)
+        statusItem.menu = makeStatusMenu()
     }
 
     @MainActor private func refreshMenuBar() {
-        statusItem.button?.title = "QF"
-        statusItem.button?.image = KeyboardIcon.make(active: engine.isMidiModeActive)
-        statusItem.button?.imagePosition = .imageLeft
+        statusItem.button?.title = engine.isMidiModeActive ? "⌨ QF ●" : "⌨ QF"
+        statusItem.button?.image = nil
+        statusItem.button?.imagePosition = .noImage
+        statusItem.menu = makeStatusMenu()
         if engine.showOverlay && engine.isMidiModeActive {
             showOverlay()
         } else {
@@ -70,6 +70,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settingsWindow = SettingsWindowController(engine: engine)
         }
         settingsWindow?.toggle(relativeTo: statusItem.button)
+    }
+
+    @MainActor @objc private func toggleMidiModeFromMenu() {
+        engine.toggleMidiMode()
+    }
+
+    @MainActor @objc private func toggleOverlayFromMenu() {
+        engine.showOverlay.toggle()
+    }
+
+    @MainActor @objc private func panicFromMenu() {
+        engine.panic()
+    }
+
+    @MainActor private func makeStatusMenu() -> NSMenu {
+        let menu = NSMenu()
+        let title = NSMenuItem(title: engine.isMidiModeActive ? "Qwerty Fretboard: MIDI On" : "Qwerty Fretboard: MIDI Off", action: nil, keyEquivalent: "")
+        title.isEnabled = false
+        menu.addItem(title)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let settings = NSMenuItem(title: "Settings...", action: #selector(toggleSettings), keyEquivalent: ",")
+        settings.target = self
+        menu.addItem(settings)
+
+        let midi = NSMenuItem(title: engine.isMidiModeActive ? "Turn MIDI Mode Off" : "Turn MIDI Mode On", action: #selector(toggleMidiModeFromMenu), keyEquivalent: "")
+        midi.target = self
+        menu.addItem(midi)
+
+        let overlay = NSMenuItem(title: "Show Mini Fretboard", action: #selector(toggleOverlayFromMenu), keyEquivalent: "")
+        overlay.target = self
+        overlay.state = engine.showOverlay ? .on : .off
+        menu.addItem(overlay)
+
+        let panic = NSMenuItem(title: "Panic / All Notes Off", action: #selector(panicFromMenu), keyEquivalent: "")
+        panic.target = self
+        menu.addItem(panic)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let help = NSMenuItem(title: "Hotkey: Control Option Command Space", action: nil, keyEquivalent: "")
+        help.isEnabled = false
+        menu.addItem(help)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let quit = NSMenuItem(title: "Quit Qwerty Fretboard", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        quit.target = NSApp
+        menu.addItem(quit)
+        return menu
     }
 
     @MainActor private func showOverlay() {
