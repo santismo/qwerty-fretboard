@@ -490,6 +490,14 @@ final class FretboardEngine: @unchecked Sendable {
     }
 
     func handleFlagsChanged(keyCode: CGKeyCode, flags: CGEventFlags) -> Bool {
+        if keyCode == Key.capsLock.rawValue {
+            let nextState = flags.contains(.maskAlphaShift)
+            if highStrings != nextState {
+                highStrings = nextState
+                onStateChanged?()
+            }
+            return true
+        }
         if keyCode == Key.leftControl.rawValue || keyCode == Key.rightControl.rawValue {
             return handleModifier(keyCode: keyCode, active: flags.contains(.maskControl), store: &controlHeld, transpose: -2)
         }
@@ -577,10 +585,12 @@ final class FretboardEngine: @unchecked Sendable {
     }
 
     private func send(_ bytes: [UInt8]) {
-        var packetList = MIDIPacketList()
-        withUnsafeMutablePointer(to: &packetList) { packetListPointer in
+        var storage = [UInt8](repeating: 0, count: 1024)
+        storage.withUnsafeMutableBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.baseAddress else { return }
+            let packetListPointer = baseAddress.assumingMemoryBound(to: MIDIPacketList.self)
             var packet = MIDIPacketListInit(packetListPointer)
-            packet = MIDIPacketListAdd(packetListPointer, 1024, packet, 0, bytes.count, bytes)
+            packet = MIDIPacketListAdd(packetListPointer, rawBuffer.count, packet, 0, bytes.count, bytes)
             MIDIReceived(midiSource, packetListPointer)
         }
     }
@@ -808,6 +818,7 @@ private extension NSEvent.ModifierFlags {
         if contains(.option) { flags.insert(.maskAlternate) }
         if contains(.command) { flags.insert(.maskCommand) }
         if contains(.shift) { flags.insert(.maskShift) }
+        if contains(.capsLock) { flags.insert(.maskAlphaShift) }
         return flags
     }
 }
@@ -879,8 +890,15 @@ final class FretboardOverlayContentView: NSView {
     }
 
     func refresh() {
-        listenButton.title = "●"
-        listenButton.contentTintColor = engine.isMidiModeActive ? .systemRed : .white
+        let color = engine.isMidiModeActive ? NSColor.systemRed : NSColor.white
+        listenButton.attributedTitle = NSAttributedString(
+            string: "●",
+            attributes: [
+                .foregroundColor: color,
+                .font: NSFont.systemFont(ofSize: 18, weight: .bold)
+            ]
+        )
+        listenButton.contentTintColor = color
         fretboardView.needsDisplay = true
     }
 
@@ -930,6 +948,8 @@ final class FretboardOverlayContentView: NSView {
 
     @objc private func toggleListening() {
         engine.toggleMidiMode()
+        refresh()
+        window?.makeKey()
     }
 }
 
