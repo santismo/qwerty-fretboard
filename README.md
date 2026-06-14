@@ -29,3 +29,7 @@ The original browser version is still available at:
 https://santismo.github.io/qwerty-fretboard/
 
 Note: various chord clusters may not be possible on some keyboards due to hardware rollover limitations.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
