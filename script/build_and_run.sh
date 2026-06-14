@@ -48,8 +48,6 @@ cat >"$APP_CONTENTS/Info.plist" <<PLIST
   <string>AppIcon</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
-  <key>LSUIElement</key>
-  <true/>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
   <key>NSAppleEventsUsageDescription</key>

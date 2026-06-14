@@ -13,7 +13,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var runLoopSource: CFRunLoopSource?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        NSApp.setActivationPolicy(.regular)
+        setupApplicationMenu()
         engine.onStateChanged = { [weak self] in
             DispatchQueue.main.async {
                 self?.refreshMenuBar()
@@ -31,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.installEventTap()
             self.refreshMenuBar()
             self.showSettings()
+            NSApp.activate(ignoringOtherApps: true)
         }
     }
 
@@ -52,7 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor private func setupStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: 142)
+        statusItem = NSStatusBar.system.statusItem(withLength: 164)
         statusItem.isVisible = true
         statusItem.autosaveName = "QwertyFretboardStatusItem"
         statusItem.button?.toolTip = "Qwerty Fretboard"
@@ -134,6 +136,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         quit.target = NSApp
         menu.addItem(quit)
         return menu
+    }
+
+    @MainActor private func setupApplicationMenu() {
+        let mainMenu = NSMenu()
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu()
+        let settings = NSMenuItem(title: "Settings...", action: #selector(toggleSettings), keyEquivalent: ",")
+        settings.target = self
+        appMenu.addItem(settings)
+        appMenu.addItem(NSMenuItem.separator())
+        let quit = NSMenuItem(title: "Quit Qwerty Fretboard", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        quit.target = NSApp
+        appMenu.addItem(quit)
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+        NSApp.mainMenu = mainMenu
     }
 
     @MainActor private func showOverlay() {
