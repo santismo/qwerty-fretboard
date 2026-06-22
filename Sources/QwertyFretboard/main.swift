@@ -267,12 +267,32 @@ struct FretKey: Hashable {
     let row: Int
 }
 
+enum MiniFretboardViewMode: String, CaseIterable {
+    case fretboard
+    case noteNames
+    case slantedKeyboard
+
+    var title: String {
+        switch self {
+        case .fretboard:
+            "Fretboard"
+        case .noteNames:
+            "Note Names"
+        case .slantedKeyboard:
+            "Slanted Keyboard"
+        }
+    }
+}
+
 final class FretboardEngine: @unchecked Sendable {
     var onStateChanged: (() -> Void)?
     var onActiveNotesChanged: (() -> Void)?
     var isMidiModeActive = false
     var showOverlay: Bool {
         didSet { UserDefaults.standard.set(showOverlay, forKey: "showOverlay"); onStateChanged?() }
+    }
+    var miniViewMode: MiniFretboardViewMode {
+        didSet { UserDefaults.standard.set(miniViewMode.rawValue, forKey: "miniViewMode"); onStateChanged?() }
     }
     var velocity: Int {
         didSet { velocity = min(127, max(1, velocity)); UserDefaults.standard.set(velocity, forKey: "velocity"); onStateChanged?() }
@@ -356,6 +376,8 @@ final class FretboardEngine: @unchecked Sendable {
 
     init() {
         showOverlay = UserDefaults.standard.object(forKey: "showOverlay") as? Bool ?? true
+        let storedMiniViewMode = UserDefaults.standard.string(forKey: "miniViewMode").flatMap(MiniFretboardViewMode.init(rawValue:))
+        miniViewMode = storedMiniViewMode ?? .fretboard
         velocity = UserDefaults.standard.object(forKey: "velocity") as? Int ?? 100
         semitoneTranspose = UserDefaults.standard.object(forKey: "transpose") as? Int ?? 0
         bendRange = UserDefaults.standard.object(forKey: "bendRange") as? Int ?? 2
@@ -373,6 +395,11 @@ final class FretboardEngine: @unchecked Sendable {
     func noteName(for midiNote: Int) -> String {
         let names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
         return "\(names[midiNote % 12])\(midiNote / 12 - 1)"
+    }
+
+    func noteLetterName(for midiNote: Int) -> String {
+        let names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+        return names[midiNote % 12]
     }
 
     func midiNote(for key: FretKey) -> Int {
@@ -830,21 +857,24 @@ final class FretboardOverlayWindow: NSWindow {
         overlayView = FretboardOverlayContentView(engine: engine)
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 900, height: 600)
         super.init(
-            contentRect: NSRect(x: screenFrame.midX - 380, y: screenFrame.minY + 70, width: 760, height: 315),
+            contentRect: NSRect(x: screenFrame.midX - 320, y: screenFrame.minY + 70, width: 640, height: 240),
             styleMask: [.borderless, .resizable],
             backing: .buffered,
             defer: false
         )
-        title = ""
-        isOpaque = true
-        backgroundColor = NSColor(calibratedWhite: 0.05, alpha: 0.98)
+        title = "Qwerty Fretboard Mini"
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = true
         level = .floating
         ignoresMouseEvents = false
         isMovableByWindowBackground = true
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
-        minSize = NSSize(width: 280, height: 130)
+        minSize = NSSize(width: 320, height: 136)
+        contentMinSize = minSize
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        setFrameAutosaveName("QwertyFretboardMiniWindow")
         contentView = overlayView
     }
 
@@ -875,6 +905,10 @@ final class FretboardOverlayWindow: NSWindow {
 final class FretboardOverlayContentView: NSView {
     private let engine: FretboardEngine
     private let listenButton = NSButton(title: "", target: nil, action: nil)
+    private let titleLabel = NSTextField(labelWithString: "Mini Fretboard")
+    private let statusLabel = NSTextField(labelWithString: "")
+    private let settingsButton = NSButton(title: "", target: nil, action: nil)
+    private let hideButton = NSButton(title: "", target: nil, action: nil)
     private let fretboardView: FretboardView
 
     init(engine: FretboardEngine) {
@@ -891,15 +925,14 @@ final class FretboardOverlayContentView: NSView {
 
     func refresh() {
         let color = engine.isMidiModeActive ? NSColor.systemRed : NSColor.white
-        listenButton.attributedTitle = NSAttributedString(
-            string: "●",
-            attributes: [
-                .foregroundColor: color,
-                .font: NSFont.systemFont(ofSize: 18, weight: .bold)
-            ]
-        )
+        listenButton.image = NSImage(systemSymbolName: engine.isMidiModeActive ? "record.circle.fill" : "record.circle", accessibilityDescription: "Toggle MIDI mode")
+        listenButton.title = ""
         listenButton.contentTintColor = color
+        titleLabel.stringValue = engine.miniViewMode.title
+        statusLabel.stringValue = engine.isMidiModeActive ? "MIDI On" : "Pass-through"
+        statusLabel.textColor = engine.isMidiModeActive ? .systemRed : NSColor.white.withAlphaComponent(0.72)
         fretboardView.needsDisplay = true
+        needsDisplay = true
     }
 
     func handleWindowEvent(_ event: NSEvent) -> Bool {
@@ -917,21 +950,53 @@ final class FretboardOverlayContentView: NSView {
     }
 
     private func buildUI() {
-        wantsLayer = true
-        layer?.backgroundColor = NSColor(calibratedWhite: 0.05, alpha: 1).cgColor
-
         let stack = NSStackView()
         stack.orientation = .vertical
-        stack.spacing = 10
-        stack.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
+        stack.alignment = .width
+        stack.spacing = 8
+        stack.edgeInsets = NSEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
 
+        let header = NSStackView()
+        header.orientation = .horizontal
+        header.alignment = .centerY
+        header.spacing = 8
+        stack.addArrangedSubview(header)
+
         listenButton.target = self
         listenButton.action = #selector(toggleListening)
-        listenButton.bezelStyle = .rounded
-        listenButton.controlSize = .large
-        stack.addArrangedSubview(listenButton)
+        listenButton.bezelStyle = .texturedRounded
+        listenButton.controlSize = .small
+        listenButton.toolTip = "Toggle MIDI mode"
+        header.addArrangedSubview(listenButton)
+
+        titleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        titleLabel.textColor = .white
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        header.addArrangedSubview(titleLabel)
+
+        statusLabel.font = .systemFont(ofSize: 11, weight: .medium)
+        statusLabel.alignment = .right
+        statusLabel.lineBreakMode = .byTruncatingTail
+        header.addArrangedSubview(statusLabel)
+
+        settingsButton.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Mini view options")
+        settingsButton.target = self
+        settingsButton.action = #selector(showMiniSettingsMenu(_:))
+        settingsButton.bezelStyle = .texturedRounded
+        settingsButton.controlSize = .small
+        settingsButton.toolTip = "Mini view options"
+        header.addArrangedSubview(settingsButton)
+
+        hideButton.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Hide mini fretboard")
+        hideButton.target = self
+        hideButton.action = #selector(hideOverlay)
+        hideButton.bezelStyle = .texturedRounded
+        hideButton.controlSize = .small
+        hideButton.toolTip = "Hide mini fretboard"
+        header.addArrangedSubview(hideButton)
 
         fretboardView.translatesAutoresizingMaskIntoConstraints = false
         stack.addArrangedSubview(fretboardView)
@@ -941,8 +1006,14 @@ final class FretboardOverlayContentView: NSView {
             stack.trailingAnchor.constraint(equalTo: trailingAnchor),
             stack.topAnchor.constraint(equalTo: topAnchor),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor),
-            listenButton.widthAnchor.constraint(equalToConstant: 42),
-            listenButton.heightAnchor.constraint(equalToConstant: 30)
+            listenButton.widthAnchor.constraint(equalToConstant: 34),
+            listenButton.heightAnchor.constraint(equalToConstant: 26),
+            settingsButton.widthAnchor.constraint(equalToConstant: 28),
+            settingsButton.heightAnchor.constraint(equalToConstant: 26),
+            hideButton.widthAnchor.constraint(equalToConstant: 28),
+            hideButton.heightAnchor.constraint(equalToConstant: 26),
+            statusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 74),
+            fretboardView.heightAnchor.constraint(greaterThanOrEqualToConstant: 82)
         ])
     }
 
@@ -950,6 +1021,74 @@ final class FretboardOverlayContentView: NSView {
         engine.toggleMidiMode()
         refresh()
         window?.makeKey()
+    }
+
+    @objc private func showMiniSettingsMenu(_ sender: NSButton) {
+        let menu = NSMenu()
+        for mode in MiniFretboardViewMode.allCases {
+            let item = NSMenuItem(title: mode.title, action: #selector(changeMiniViewMode(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = mode.rawValue
+            item.state = engine.miniViewMode == mode ? .on : .off
+            menu.addItem(item)
+        }
+        menu.addItem(NSMenuItem.separator())
+
+        let hideItem = NSMenuItem(title: "Hide Mini Window", action: #selector(hideOverlay), keyEquivalent: "")
+        hideItem.target = self
+        menu.addItem(hideItem)
+
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.minY - 2), in: sender)
+    }
+
+    @objc private func changeMiniViewMode(_ sender: NSMenuItem) {
+        guard
+            let rawValue = sender.representedObject as? String,
+            let mode = MiniFretboardViewMode(rawValue: rawValue)
+        else { return }
+
+        engine.miniViewMode = mode
+        refresh()
+    }
+
+    @objc private func hideOverlay() {
+        engine.showOverlay = false
+    }
+
+    override var isOpaque: Bool {
+        false
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let chromeRect = bounds.insetBy(dx: 0.5, dy: 0.5)
+        let chromePath = NSBezierPath(roundedRect: chromeRect, xRadius: 13, yRadius: 13)
+        NSColor(calibratedWhite: 0.055, alpha: 0.97).setFill()
+        chromePath.fill()
+
+        NSColor.white.withAlphaComponent(0.22).setStroke()
+        chromePath.lineWidth = 1
+        chromePath.stroke()
+
+        NSColor.white.withAlphaComponent(0.10).setStroke()
+        let separator = NSBezierPath()
+        separator.move(to: NSPoint(x: 10, y: bounds.maxY - 44))
+        separator.line(to: NSPoint(x: bounds.maxX - 10, y: bounds.maxY - 44))
+        separator.lineWidth = 1
+        separator.stroke()
+
+        drawResizeGrip()
+    }
+
+    private func drawResizeGrip() {
+        let color = NSColor.white.withAlphaComponent(0.22)
+        color.setStroke()
+        for offset in [0, 5, 10] as [CGFloat] {
+            let path = NSBezierPath()
+            path.move(to: NSPoint(x: bounds.maxX - 18 + offset, y: bounds.minY + 7))
+            path.line(to: NSPoint(x: bounds.maxX - 7, y: bounds.minY + 18 - offset))
+            path.lineWidth = 1
+            path.stroke()
+        }
     }
 }
 
@@ -970,36 +1109,104 @@ final class FretboardView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         NSColor(calibratedWhite: 0.04, alpha: 0.86).setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: 14, yRadius: 14).fill()
+        NSBezierPath(roundedRect: bounds, xRadius: showsFooter ? 14 : 9, yRadius: showsFooter ? 14 : 9).fill()
 
-        let margin: CGFloat = 18
-        let labelWidth: CGFloat = 52
-        let bottomBarHeight: CGFloat = showsFooter ? 34 : 0
-        let availableHeight = max(80, bounds.height - margin * 2 - bottomBarHeight - (showsFooter ? 0 : 4))
-        let rowHeight: CGFloat = min(38, max(20, (availableHeight - 3 * 8) / 4))
-        let gap: CGFloat = 8
+        let miniMode = showsFooter ? MiniFretboardViewMode.fretboard : engine.miniViewMode
+        let compact = !showsFooter || bounds.width < 540 || bounds.height < 210
+        let tiny = bounds.width < 430 || bounds.height < 155
+        if miniMode == .slantedKeyboard {
+            drawSlantedKeyboard(compact: compact, tiny: tiny)
+            return
+        }
+
+        let noteNamesPrimary = miniMode == .noteNames
+        let margin: CGFloat = tiny ? 7 : (compact ? 10 : 18)
+        let labelWidth: CGFloat = tiny || noteNamesPrimary ? 0 : (compact ? 34 : 52)
+        let bottomBarHeight: CGFloat = showsFooter ? (compact ? 28 : 34) : 0
+        let gap: CGFloat = tiny ? 3 : (compact ? 4 : 8)
+        let availableHeight = max(tiny ? 44 : 80, bounds.height - margin * 2 - bottomBarHeight - (showsFooter ? 0 : 2))
+        let rowHeight: CGFloat = min(compact ? 30 : 38, max(tiny ? 13 : 20, (availableHeight - 3 * gap) / 4))
         let fretCount = 11
-        let cellWidth = (bounds.width - margin * 2 - labelWidth - CGFloat(fretCount - 1) * gap) / CGFloat(fretCount)
+        let cellWidth = max(8, (bounds.width - margin * 2 - labelWidth - CGFloat(fretCount - 1) * gap) / CGFloat(fretCount))
         let startY = bounds.height - margin - rowHeight
+        let showRowLabels = !noteNamesPrimary && labelWidth >= 20
+        let showNoteNames = rowHeight >= 24 && cellWidth >= 24
+        let keyFontSize: CGFloat = tiny ? 9 : (compact ? 10.5 : 12)
+        let noteFontSize: CGFloat = compact ? 8.5 : 10
+        let cornerRadius = min(compact ? 6 : 7, max(3, min(cellWidth, rowHeight) * 0.24))
 
         let active = engine.activeKeyCodes
         for (rowIndex, row) in engine.rows.enumerated() {
             let y = startY - CGFloat(rowIndex) * (rowHeight + gap)
-            drawText(engine.rowName(rowIndex), in: NSRect(x: margin, y: y + 11, width: labelWidth - 8, height: 20), color: .white, size: 13, alignment: .right)
+            if showRowLabels {
+                drawText(
+                    engine.rowName(rowIndex),
+                    in: NSRect(x: margin, y: y + max(0, (rowHeight - 15) / 2), width: max(1, labelWidth - 7), height: 15),
+                    color: .white,
+                    size: compact ? 10.5 : 13,
+                    alignment: .right,
+                    minSize: 7.5
+                )
+            }
             for key in row {
                 let x = margin + labelWidth + CGFloat(key.fret) * (cellWidth + gap)
                 let rect = NSRect(x: x, y: y, width: cellWidth, height: rowHeight)
                 let isActive = active.contains(key.keyCode)
-                let path = NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7)
+                let path = NSBezierPath(roundedRect: rect, xRadius: cornerRadius, yRadius: cornerRadius)
                 (isActive ? NSColor.white : NSColor(calibratedWhite: 0.12, alpha: 1)).setFill()
                 path.fill()
                 NSColor(calibratedWhite: isActive ? 1 : 0.22, alpha: 1).setStroke()
                 path.lineWidth = 1
                 path.stroke()
 
-                let note = engine.noteName(for: engine.midiNote(for: key))
-                drawText(key.label, in: NSRect(x: rect.minX, y: rect.minY + 21, width: rect.width, height: 16), color: isActive ? .black : .white, size: 12, alignment: .center)
-                drawText(note, in: NSRect(x: rect.minX, y: rect.minY + 6, width: rect.width, height: 14), color: isActive ? .darkGray : .lightGray, size: 10, alignment: .center)
+                if noteNamesPrimary {
+                    let note = engine.noteLetterName(for: engine.midiNote(for: key))
+                    drawText(
+                        note,
+                        in: NSRect(x: rect.minX + 2, y: rect.minY + max(0, (rowHeight - 19) / 2), width: rect.width - 4, height: 19),
+                        color: isActive ? .black : .white,
+                        size: tiny ? 10 : (compact ? 13 : 16),
+                        alignment: .center,
+                        minSize: 7
+                    )
+                    if showNoteNames {
+                        drawText(
+                            key.label,
+                            in: NSRect(x: rect.minX + 2, y: rect.minY + 3, width: rect.width - 4, height: 10),
+                            color: isActive ? .darkGray : NSColor.white.withAlphaComponent(0.48),
+                            size: compact ? 7.5 : 8.5,
+                            alignment: .center,
+                            minSize: 6
+                        )
+                    }
+                } else if showNoteNames {
+                    let note = engine.noteName(for: engine.midiNote(for: key))
+                    drawText(
+                        key.label,
+                        in: NSRect(x: rect.minX + 2, y: rect.minY + rowHeight - 17, width: rect.width - 4, height: 14),
+                        color: isActive ? .black : .white,
+                        size: keyFontSize,
+                        alignment: .center,
+                        minSize: 7
+                    )
+                    drawText(
+                        note,
+                        in: NSRect(x: rect.minX + 2, y: rect.minY + 5, width: rect.width - 4, height: 12),
+                        color: isActive ? .darkGray : .lightGray,
+                        size: noteFontSize,
+                        alignment: .center,
+                        minSize: 6.5
+                    )
+                } else {
+                    drawText(
+                        key.label,
+                        in: NSRect(x: rect.minX + 1, y: rect.minY + max(0, (rowHeight - 13) / 2), width: rect.width - 2, height: 13),
+                        color: isActive ? .black : .white,
+                        size: keyFontSize,
+                        alignment: .center,
+                        minSize: 6.5
+                    )
+                }
             }
         }
 
@@ -1010,23 +1217,95 @@ final class FretboardView: NSView {
             KeyboardIcon.draw(in: NSRect(x: barRect.minX + 10, y: barRect.minY + 8, width: 24, height: 18), active: true, template: false)
             drawText(
                 engine.isMidiModeActive ? "qwerty-fretboard MIDI  •  listening" : "qwerty-fretboard MIDI  •  press Listen to capture keys",
-                in: NSRect(x: barRect.minX + 42, y: barRect.minY + 8, width: barRect.width - 52, height: 18),
+                in: NSRect(x: barRect.minX + 42, y: barRect.minY + max(5, (barRect.height - 18) / 2), width: barRect.width - 52, height: 18),
                 color: .white,
-                size: 11,
-                alignment: .left
+                size: compact ? 10 : 11,
+                alignment: .left,
+                minSize: 8
             )
         }
     }
 
-    private func drawText(_ text: String, in rect: NSRect, color: NSColor, size: CGFloat, alignment: NSTextAlignment) {
+    private func drawSlantedKeyboard(compact: Bool, tiny: Bool) {
+        let margin: CGFloat = tiny ? 8 : (compact ? 10 : 14)
+        let gap: CGFloat = tiny ? 3 : (compact ? 4 : 6)
+        let rowOffsets: [CGFloat] = [0, 0.45, 0.78, 1.18]
+        let fretCount = 11
+        let availableWidth = max(1, bounds.width - margin * 2)
+        let availableHeight = max(1, bounds.height - margin * 2)
+        let rowHeight = min(compact ? 31 : 38, max(tiny ? 14 : 20, (availableHeight - 3 * gap) / 4))
+        let maxOffset = rowOffsets.max() ?? 0
+        let cellWidth = max(8, (availableWidth - CGFloat(fretCount - 1) * gap) / (CGFloat(fretCount) + maxOffset))
+        let totalHeight = rowHeight * 4 + gap * 3
+        let startY = bounds.midY + totalHeight / 2 - rowHeight
+        let active = engine.activeKeyCodes
+        let showNoteNames = rowHeight >= 24 && cellWidth >= 24
+
+        for (rowIndex, row) in engine.rows.enumerated() {
+            let y = startY - CGFloat(rowIndex) * (rowHeight + gap)
+            let rowOffset = rowOffsets[min(rowIndex, rowOffsets.count - 1)] * cellWidth
+            for key in row {
+                let x = margin + rowOffset + CGFloat(key.fret) * (cellWidth + gap)
+                let rect = NSRect(x: x, y: y, width: cellWidth, height: rowHeight)
+                let isActive = active.contains(key.keyCode)
+                let path = NSBezierPath(roundedRect: rect, xRadius: min(7, rowHeight * 0.24), yRadius: min(7, rowHeight * 0.24))
+                (isActive ? NSColor.white : NSColor(calibratedWhite: 0.13, alpha: 1)).setFill()
+                path.fill()
+                NSColor(calibratedWhite: isActive ? 1 : 0.25, alpha: 1).setStroke()
+                path.lineWidth = 1
+                path.stroke()
+
+                if showNoteNames {
+                    let note = engine.noteLetterName(for: engine.midiNote(for: key))
+                    drawText(
+                        key.label,
+                        in: NSRect(x: rect.minX + 2, y: rect.minY + rowHeight - 17, width: rect.width - 4, height: 14),
+                        color: isActive ? .black : .white,
+                        size: tiny ? 8.5 : 10.5,
+                        alignment: .center,
+                        minSize: 6.5
+                    )
+                    drawText(
+                        note,
+                        in: NSRect(x: rect.minX + 2, y: rect.minY + 5, width: rect.width - 4, height: 12),
+                        color: isActive ? .darkGray : NSColor.white.withAlphaComponent(0.55),
+                        size: tiny ? 7 : 8.5,
+                        alignment: .center,
+                        minSize: 6
+                    )
+                } else {
+                    drawText(
+                        key.label,
+                        in: NSRect(x: rect.minX + 1, y: rect.minY + max(0, (rowHeight - 13) / 2), width: rect.width - 2, height: 13),
+                        color: isActive ? .black : .white,
+                        size: tiny ? 8.5 : 10,
+                        alignment: .center,
+                        minSize: 6.5
+                    )
+                }
+            }
+        }
+    }
+
+    private func drawText(_ text: String, in rect: NSRect, color: NSColor, size: CGFloat, alignment: NSTextAlignment, minSize: CGFloat = 8) {
+        guard rect.width > 1, rect.height > 1 else { return }
         let style = NSMutableParagraphStyle()
         style.alignment = alignment
+        style.lineBreakMode = .byTruncatingTail
+        let nsText = text as NSString
+        var fontSize = size
+        while fontSize > minSize {
+            let font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
+            let measuredWidth = nsText.size(withAttributes: [.font: font]).width
+            if measuredWidth <= rect.width + 0.5 { break }
+            fontSize -= 0.5
+        }
         let attrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: color,
-            .font: NSFont.systemFont(ofSize: size, weight: .medium),
+            .font: NSFont.systemFont(ofSize: max(minSize, fontSize), weight: .medium),
             .paragraphStyle: style
         ]
-        text.draw(in: rect, withAttributes: attrs)
+        nsText.draw(in: rect, withAttributes: attrs)
     }
 }
 
