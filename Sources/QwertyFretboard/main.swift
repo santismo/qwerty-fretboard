@@ -39,6 +39,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.overlayWindow?.refresh()
             }
         }
+        engine.onMIDIMonitorChanged = { [weak self] in
+            DispatchQueue.main.async {
+                self?.settingsWindow?.refreshMIDIMonitor()
+            }
+        }
         setupStatusItem()
         refreshMenuBar()
         showSettings()
@@ -47,6 +52,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.showSettings()
             self?.installEventTap()
         }
+    }
+
+    @MainActor func applicationDidBecomeActive(_ notification: Notification) {
+        installEventTap()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -128,6 +137,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         midi.target = self
         menu.addItem(midi)
 
+        let ccInput = NSMenuItem(title: engine.ccInputEnabled ? "MIDI CC Input On" : "MIDI CC Input Off", action: nil, keyEquivalent: "")
+        ccInput.isEnabled = false
+        menu.addItem(ccInput)
+
         let overlay = NSMenuItem(title: "Show Mini Fretboard", action: #selector(toggleOverlayFromMenu), keyEquivalent: "")
         overlay.target = self
         overlay.state = engine.showOverlay ? .on : .off
@@ -174,10 +187,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlayWindow?.show()
     }
 
-    private func installEventTap() {
-        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
-        guard AXIsProcessTrustedWithOptions(options) else {
-            engine.permissionStatus = "Input Monitoring or Accessibility permission is needed for global keyboard MIDI mode."
+    fileprivate func installEventTap() {
+        if let eventTap, CFMachPortIsValid(eventTap) {
+            engine.permissionStatus = "Keyboard capture ready."
+            return
+        }
+
+        if let runLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
+            self.runLoopSource = nil
+        }
+        if let eventTap {
+            CFMachPortInvalidate(eventTap)
+            self.eventTap = nil
+        }
+
+        guard AXIsProcessTrusted() else {
+            engine.permissionStatus = "Accessibility access is off for global computer-keyboard capture. MIDI CC input can still trigger Qwerty commands."
             return
         }
 
@@ -198,7 +224,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         guard let eventTap else {
-            engine.permissionStatus = "Could not install keyboard event tap. Recheck Input Monitoring permission."
+            engine.permissionStatus = "Could not install keyboard event tap. Recheck Input Monitoring and Accessibility permissions."
             return
         }
 
@@ -206,6 +232,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: eventTap, enable: true)
         engine.permissionStatus = "Keyboard capture ready."
+    }
+
+    fileprivate func requestAccessibilityPrompt() {
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+        if AXIsProcessTrustedWithOptions(options) {
+            installEventTap()
+        } else {
+            engine.permissionStatus = "Accessibility access is still off for this app copy. Remove old Qwerty Fretboard entries, add /Applications/Qwerty Fretboard.app, then click Check Keyboard Access. MIDI CC input still works internally."
+        }
     }
 
     private func handle(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -267,6 +302,62 @@ struct FretKey: Hashable {
     let row: Int
 }
 
+struct MIDIControlMapping: Codable, Hashable, Identifiable {
+    var id: UUID
+    var enabled: Bool
+    var cc: Int
+    var channel: Int
+    var keyCode: CGKeyCode
+
+    init(id: UUID = UUID(), enabled: Bool = true, cc: Int, channel: Int = 0, keyCode: CGKeyCode) {
+        self.id = id
+        self.enabled = enabled
+        self.cc = cc
+        self.channel = channel
+        self.keyCode = keyCode
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case enabled
+        case cc
+        case channel
+        case keyCode
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        cc = try container.decodeIfPresent(Int.self, forKey: .cc) ?? 80
+        channel = try container.decodeIfPresent(Int.self, forKey: .channel) ?? 0
+        keyCode = try container.decodeIfPresent(CGKeyCode.self, forKey: .keyCode) ?? Key.leftArrow.rawValue
+        self = normalized
+    }
+
+    var normalized: MIDIControlMapping {
+        var copy = self
+        copy.cc = min(127, max(0, copy.cc))
+        copy.channel = min(16, max(0, copy.channel))
+        return copy
+    }
+
+    func matches(controller: Int, incomingChannel: Int) -> Bool {
+        enabled && cc == controller && (channel == 0 || channel == incomingChannel)
+    }
+}
+
+struct KeyCommandOption {
+    let keyCode: CGKeyCode
+    let title: String
+}
+
+struct MIDIMonitorEvent {
+    let date: Date
+    let source: String
+    let message: String
+}
+
 enum MiniFretboardViewMode: String, CaseIterable {
     case fretboard
     case noteNames
@@ -285,8 +376,12 @@ enum MiniFretboardViewMode: String, CaseIterable {
 }
 
 final class FretboardEngine: @unchecked Sendable {
+    private static let ccInputEnabledKey = "ccInputEnabled"
+    private static let ccMappingsKey = "ccMappings"
+
     var onStateChanged: (() -> Void)?
     var onActiveNotesChanged: (() -> Void)?
+    var onMIDIMonitorChanged: (() -> Void)?
     var isMidiModeActive = false
     var showOverlay: Bool {
         didSet { UserDefaults.standard.set(showOverlay, forKey: "showOverlay"); onStateChanged?() }
@@ -303,11 +398,33 @@ final class FretboardEngine: @unchecked Sendable {
     var bendRange: Int {
         didSet { bendRange = min(12, max(1, bendRange)); UserDefaults.standard.set(bendRange, forKey: "bendRange"); sendBendSensitivity(); onStateChanged?() }
     }
+    var ccInputEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(ccInputEnabled, forKey: Self.ccInputEnabledKey)
+            if !ccInputEnabled {
+                releaseMappedCCKeys()
+            }
+            onStateChanged?()
+        }
+    }
+    var ccMappings: [MIDIControlMapping] {
+        didSet {
+            persistCCMappings()
+            onStateChanged?()
+        }
+    }
     var permissionStatus = "Keyboard capture not ready." { didSet { onStateChanged?() } }
+    private(set) var midiMonitorEvents: [MIDIMonitorEvent] = []
 
     private var midiClient = MIDIClientRef()
     private var midiSource = MIDIEndpointRef()
+    private var midiInputPort = MIDIPortRef()
+    private var midiControlDestination = MIDIEndpointRef()
+    private var connectedInputSources: [MIDIEndpointRef] = []
+    private var connectedInputNames: [String] = []
+    private var connectedInputRefCons: [UnsafeMutableRawPointer] = []
     private var activeNotes: [CGKeyCode: Int] = [:]
+    private var activeMappedCCs: [UUID: CGKeyCode] = [:]
     private var sustainedNotes = Set<Int>()
     private var sustainHeld = false
     private var sustainLatched = false
@@ -381,15 +498,115 @@ final class FretboardEngine: @unchecked Sendable {
         velocity = UserDefaults.standard.object(forKey: "velocity") as? Int ?? 100
         semitoneTranspose = UserDefaults.standard.object(forKey: "transpose") as? Int ?? 0
         bendRange = UserDefaults.standard.object(forKey: "bendRange") as? Int ?? 2
+        ccInputEnabled = UserDefaults.standard.object(forKey: Self.ccInputEnabledKey) as? Bool ?? true
+        ccMappings = Self.loadCCMappings()
         setupMIDI()
+    }
+
+    deinit {
+        releaseConnectedInputRefCons()
     }
 
     var activeKeyCodes: Set<CGKeyCode> {
         Set(activeNotes.keys)
     }
 
+    var commandOptions: [KeyCommandOption] {
+        var options: [KeyCommandOption] = [
+            KeyCommandOption(keyCode: Key.leftArrow.rawValue, title: "Left Arrow"),
+            KeyCommandOption(keyCode: Key.rightArrow.rawValue, title: "Right Arrow"),
+            KeyCommandOption(keyCode: Key.downArrow.rawValue, title: "Down Arrow"),
+            KeyCommandOption(keyCode: Key.upArrow.rawValue, title: "Up Arrow"),
+            KeyCommandOption(keyCode: Key.i.rawValue, title: "I"),
+            KeyCommandOption(keyCode: Key.space.rawValue, title: "Space / Sustain"),
+            KeyCommandOption(keyCode: Key.enter.rawValue, title: "Enter / Vibrato"),
+            KeyCommandOption(keyCode: Key.capsLock.rawValue, title: "Caps Lock / Hi-Lo"),
+            KeyCommandOption(keyCode: Key.tab.rawValue, title: "Tab / Velocity Down"),
+            KeyCommandOption(keyCode: Key.grave.rawValue, title: "` / Velocity Up")
+        ]
+        let existing = Set(options.map(\.keyCode))
+        let rowOptions = rows
+            .flatMap { $0 }
+            .filter { !existing.contains($0.keyCode) }
+            .map { KeyCommandOption(keyCode: $0.keyCode, title: $0.label) }
+        options.append(contentsOf: rowOptions)
+        return options
+    }
+
     var modeLabel: String {
         isMidiModeActive ? "MIDI mode active" : "Keyboard pass-through"
+    }
+
+    var ccInputLabel: String {
+        ccInputEnabled ? "MIDI CC input active" : "MIDI CC input off"
+    }
+
+    var midiInputSummary: String {
+        guard !connectedInputNames.isEmpty else {
+            return "MIDI CC sources: none connected"
+        }
+        return "MIDI CC sources: " + connectedInputNames.joined(separator: ", ")
+    }
+
+    var midiMonitorText: String {
+        guard !midiMonitorEvents.isEmpty else {
+            return "No MIDI received yet. Press a Midivana keypad button, then check here for CC messages."
+        }
+        return midiMonitorEvents
+            .suffix(24)
+            .map { event in
+                let time = Self.monitorTimeFormatter.string(from: event.date)
+                return "\(time)  \(event.source)  \(event.message)"
+            }
+            .joined(separator: "\n")
+    }
+
+    private static let monitorTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        return formatter
+    }()
+
+    func commandTitle(for keyCode: CGKeyCode) -> String {
+        commandOptions.first(where: { $0.keyCode == keyCode })?.title ?? "Key \(keyCode)"
+    }
+
+    func addCCMapping() {
+        ccMappings.append(MIDIControlMapping(cc: nextAvailableMappingCC(), keyCode: Key.i.rawValue).normalized)
+    }
+
+    func resetCCMappings() {
+        releaseMappedCCKeys()
+        ccMappings = Self.defaultCCMappings
+    }
+
+    func refreshMIDIInputs() {
+        reconnectMIDIInputs()
+        onStateChanged?()
+    }
+
+    func clearMIDIMonitor() {
+        midiMonitorEvents.removeAll()
+        onMIDIMonitorChanged?()
+    }
+
+    func deleteCCMapping(at index: Int) {
+        guard ccMappings.indices.contains(index) else { return }
+        let mapping = ccMappings[index]
+        if let keyCode = activeMappedCCs.removeValue(forKey: mapping.id) {
+            triggerMappedKey(keyCode: keyCode, down: false)
+        }
+        ccMappings.remove(at: index)
+    }
+
+    func updateCCMapping(at index: Int, update: (inout MIDIControlMapping) -> Void) {
+        guard ccMappings.indices.contains(index) else { return }
+        var next = ccMappings[index]
+        if let keyCode = activeMappedCCs.removeValue(forKey: next.id) {
+            triggerMappedKey(keyCode: keyCode, down: false)
+        }
+        update(&next)
+        ccMappings[index] = next.normalized
     }
 
     func noteName(for midiNote: Int) -> String {
@@ -544,7 +761,9 @@ final class FretboardEngine: @unchecked Sendable {
     func panic() {
         activeNotes.values.forEach { send([0x80, UInt8($0), 0]) }
         sustainedNotes.forEach { send([0x80, UInt8($0), 0]) }
+        activeMappedCCs.values.forEach { triggerMappedKey(keyCode: $0, down: false) }
         activeNotes.removeAll()
+        activeMappedCCs.removeAll()
         sustainedNotes.removeAll()
         sustainHeld = false
         stopVibrato()
@@ -556,10 +775,235 @@ final class FretboardEngine: @unchecked Sendable {
         highStrings ? [("e", 64), ("B", 59), ("G", 55), ("D", 50)] : [("G", 55), ("D", 50), ("A", 45), ("E", 40)]
     }
 
+    private static var defaultCCMappings: [MIDIControlMapping] {
+        [
+            MIDIControlMapping(cc: 80, keyCode: Key.leftArrow.rawValue),
+            MIDIControlMapping(cc: 81, keyCode: Key.rightArrow.rawValue),
+            MIDIControlMapping(cc: 83, keyCode: Key.downArrow.rawValue),
+            MIDIControlMapping(cc: 82, keyCode: Key.upArrow.rawValue),
+            MIDIControlMapping(cc: 84, keyCode: Key.i.rawValue)
+        ]
+    }
+
+    private static func loadCCMappings() -> [MIDIControlMapping] {
+        guard
+            let data = UserDefaults.standard.data(forKey: ccMappingsKey),
+            let mappings = try? JSONDecoder().decode([MIDIControlMapping].self, from: data),
+            !mappings.isEmpty
+        else {
+            return defaultCCMappings
+        }
+        return mappings.map(\.normalized)
+    }
+
+    private func persistCCMappings() {
+        guard let data = try? JSONEncoder().encode(ccMappings.map(\.normalized)) else { return }
+        UserDefaults.standard.set(data, forKey: Self.ccMappingsKey)
+    }
+
+    private func nextAvailableMappingCC() -> Int {
+        let used = Set(ccMappings.map(\.cc))
+        for cc in 80...127 where !used.contains(cc) {
+            return cc
+        }
+        for cc in 0...127 where !used.contains(cc) {
+            return cc
+        }
+        return 80
+    }
+
+    private func releaseMappedCCKeys() {
+        let active = activeMappedCCs
+        activeMappedCCs.removeAll()
+        for keyCode in active.values {
+            triggerMappedKey(keyCode: keyCode, down: false)
+        }
+    }
+
     private func setupMIDI() {
-        MIDIClientCreate("qwerty-fretboard" as CFString, nil, nil, &midiClient)
+        MIDIClientCreateWithBlock("qwerty-fretboard" as CFString, &midiClient) { [weak self] _ in
+            self?.refreshMIDIInputs()
+        }
         MIDISourceCreate(midiClient, "qwerty-fretboard" as CFString, &midiSource)
+        MIDIInputPortCreateWithBlock(midiClient, "qwerty-fretboard CC Input" as CFString, &midiInputPort) { [weak self] packetList, sourceRefCon in
+            let sourceName = sourceRefCon.map {
+                Unmanaged<NSString>.fromOpaque($0).takeUnretainedValue() as String
+            } ?? "MIDI input"
+            self?.handleIncomingPackets(packetList, sourceName: sourceName)
+        }
+        MIDIDestinationCreateWithBlock(midiClient, "qwerty-fretboard control" as CFString, &midiControlDestination) { [weak self] packetList, _ in
+            self?.handleIncomingPackets(packetList, sourceName: "qwerty-fretboard control")
+        }
+        reconnectMIDIInputs()
         sendBendSensitivity()
+    }
+
+    private func reconnectMIDIInputs() {
+        guard midiInputPort != 0 else { return }
+        for source in connectedInputSources {
+            MIDIPortDisconnectSource(midiInputPort, source)
+        }
+        connectedInputSources.removeAll()
+        connectedInputNames.removeAll()
+        releaseConnectedInputRefCons()
+
+        for index in 0..<MIDIGetNumberOfSources() {
+            let source = MIDIGetSource(index)
+            guard source != 0 else { continue }
+            let name = endpointName(source, fallback: "Input \(index + 1)")
+            guard source != midiSource && name != "qwerty-fretboard" else { continue }
+            let refCon = Unmanaged.passRetained(name as NSString).toOpaque()
+            MIDIPortConnectSource(midiInputPort, source, refCon)
+            connectedInputSources.append(source)
+            connectedInputNames.append(name)
+            connectedInputRefCons.append(refCon)
+        }
+        appendMIDIMonitorEvent(
+            source: "System",
+            message: connectedInputNames.isEmpty ? "No MIDI input sources connected" : "Connected sources: \(connectedInputNames.joined(separator: ", "))"
+        )
+    }
+
+    private func releaseConnectedInputRefCons() {
+        for refCon in connectedInputRefCons {
+            Unmanaged<NSString>.fromOpaque(refCon).release()
+        }
+        connectedInputRefCons.removeAll()
+    }
+
+    private func endpointName(_ endpoint: MIDIEndpointRef, fallback: String) -> String {
+        var nameRef: Unmanaged<CFString>?
+        _ = MIDIObjectGetStringProperty(endpoint, kMIDIPropertyName, &nameRef)
+        return (nameRef?.takeRetainedValue() as String?) ?? fallback
+    }
+
+    private func handleIncomingPackets(_ packetList: UnsafePointer<MIDIPacketList>, sourceName: String) {
+        var packet = packetList.pointee.packet
+        for _ in 0..<packetList.pointee.numPackets {
+            let length = Int(packet.length)
+            if length > 0 {
+                let bytes = withUnsafeBytes(of: packet.data) { buffer in
+                    Array(buffer.prefix(length))
+                }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    for message in Self.midiMessages(from: bytes) {
+                        self.applyIncomingMIDI(message, sourceName: sourceName)
+                    }
+                }
+            }
+            packet = MIDIPacketNext(&packet).pointee
+        }
+    }
+
+    private static func midiMessages(from bytes: [UInt8]) -> [[UInt8]] {
+        var messages: [[UInt8]] = []
+        var index = 0
+        var runningStatus: UInt8?
+
+        while index < bytes.count {
+            let byte = bytes[index]
+            let status: UInt8
+            if byte >= 0x80 {
+                status = byte
+                runningStatus = status
+                index += 1
+            } else if let runningStatus {
+                status = runningStatus
+            } else {
+                index += 1
+                continue
+            }
+
+            let high = status & 0xF0
+            let dataCount: Int
+            switch high {
+            case 0xC0, 0xD0:
+                dataCount = 1
+            case 0x80, 0x90, 0xA0, 0xB0, 0xE0:
+                dataCount = 2
+            default:
+                dataCount = 0
+            }
+            guard dataCount > 0, index + dataCount <= bytes.count else { break }
+            var message = [status]
+            message.append(contentsOf: bytes[index..<(index + dataCount)])
+            messages.append(message)
+            index += dataCount
+        }
+
+        return messages
+    }
+
+    private func applyIncomingMIDI(_ bytes: [UInt8], sourceName: String) {
+        guard bytes.count >= 3, bytes[0] & 0xF0 == 0xB0 else {
+            appendMIDIMonitorEvent(source: sourceName, message: "MIDI \(Self.hexString(bytes))")
+            return
+        }
+        let channel = Int(bytes[0] & 0x0F) + 1
+        let controller = Int(bytes[1])
+        let value = Int(bytes[2])
+        let matches = ccInputEnabled ? ccMappings.filter { $0.matches(controller: controller, incomingChannel: channel) } : []
+        let matchText: String
+        if !ccInputEnabled {
+            matchText = "ignored, CC input off"
+        } else if matches.isEmpty {
+            matchText = "no mapping"
+        } else {
+            matchText = "maps to " + matches.map { commandTitle(for: $0.keyCode) }.joined(separator: ", ")
+        }
+        appendMIDIMonitorEvent(source: sourceName, message: "CC ch \(channel) #\(controller) value \(value) - \(matchText)")
+        handleIncomingControlChange(controller: controller, value: value, channel: channel)
+    }
+
+    private func handleIncomingControlChange(controller: Int, value: Int, channel: Int) {
+        guard ccInputEnabled else { return }
+        let matches = ccMappings.filter { $0.matches(controller: controller, incomingChannel: channel) }
+        guard !matches.isEmpty else { return }
+
+        for mapping in matches {
+            if value > 0 {
+                guard activeMappedCCs[mapping.id] == nil else { continue }
+                activeMappedCCs[mapping.id] = mapping.keyCode
+                triggerMappedKey(keyCode: mapping.keyCode, down: true)
+            } else if let keyCode = activeMappedCCs.removeValue(forKey: mapping.id) {
+                triggerMappedKey(keyCode: keyCode, down: false)
+            }
+        }
+    }
+
+    private func triggerMappedKey(keyCode: CGKeyCode, down: Bool) {
+        let direction = down ? "down" : "up"
+        appendMIDIMonitorEvent(source: "Qwerty", message: "CC mapped \(direction) for \(commandTitle(for: keyCode)); posting keystroke")
+        postKeystroke(keyCode: keyCode, down: down)
+    }
+
+    private func postKeystroke(keyCode: CGKeyCode, down: Bool) {
+        guard AXIsProcessTrusted() else {
+            permissionStatus = "Accessibility access is off, so MIDI CC was received but keystroke posting was blocked."
+            appendMIDIMonitorEvent(source: "Keyboard", message: "Blocked \(down ? "down" : "up") for \(commandTitle(for: keyCode)); Accessibility off")
+            return
+        }
+        let source = CGEventSource(stateID: .hidSystemState)
+        guard let event = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: down) else {
+            permissionStatus = "Could not create keyboard event for MIDI CC mapping."
+            appendMIDIMonitorEvent(source: "Keyboard", message: "Could not create \(down ? "down" : "up") for \(commandTitle(for: keyCode))")
+            return
+        }
+        event.post(tap: .cghidEventTap)
+        appendMIDIMonitorEvent(source: "Keyboard", message: "Posted \(down ? "down" : "up") for \(commandTitle(for: keyCode))")
+    }
+
+    private func appendMIDIMonitorEvent(source: String, message: String) {
+        midiMonitorEvents.append(MIDIMonitorEvent(date: Date(), source: source, message: message))
+        if midiMonitorEvents.count > 80 {
+            midiMonitorEvents.removeFirst(midiMonitorEvents.count - 80)
+        }
+        onMIDIMonitorChanged?()
+    }
+
+    private static func hexString(_ bytes: [UInt8]) -> String {
+        bytes.map { String(format: "%02X", $0) }.joined(separator: " ")
     }
 
     private func handleModifier(keyCode: CGKeyCode, active: Bool, store: inout Set<CGKeyCode>, transpose: Int) -> Bool {
@@ -631,6 +1075,9 @@ final class SettingsWindowController: NSWindowController {
     private let velocitySlider = NSSlider(value: 100, minValue: 1, maxValue: 127, target: nil, action: nil)
     private let transposeSlider = NSSlider(value: 0, minValue: -12, maxValue: 12, target: nil, action: nil)
     private let bendSlider = NSSlider(value: 2, minValue: 1, maxValue: 12, target: nil, action: nil)
+    private let ccInputCheck = NSButton(checkboxWithTitle: "Receive MIDI CC from Midivana", target: nil, action: nil)
+    private let ccMappingRows = NSStackView()
+    private let midiMonitorView = NSTextView()
     private let valuesLabel = NSTextField(labelWithString: "")
     private let fretboardPreview: FretboardView
 
@@ -640,9 +1087,9 @@ final class SettingsWindowController: NSWindowController {
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
         let initialFrame = NSRect(
             x: screen.minX + 80,
-            y: max(screen.minY + 40, screen.maxY - 760),
-            width: min(820, screen.width - 120),
-            height: min(720, screen.height - 80)
+            y: max(screen.minY + 40, screen.maxY - 800),
+            width: min(760, screen.width - 120),
+            height: min(760, screen.height - 80)
         )
         let window = KeyboardCaptureWindow(
             engine: engine,
@@ -693,9 +1140,19 @@ final class SettingsWindowController: NSWindowController {
         velocitySlider.integerValue = engine.velocity
         transposeSlider.integerValue = engine.semitoneTranspose
         bendSlider.integerValue = engine.bendRange
-        statusLabel.stringValue = "\(engine.modeLabel)\nMIDI source: qwerty-fretboard\n\(engine.permissionStatus)\nHotkey: Control + Option + Command + Space"
+        ccInputCheck.state = engine.ccInputEnabled ? .on : .off
+        statusLabel.stringValue = "\(engine.modeLabel)\nMIDI source: qwerty-fretboard\nMIDI CC destination: qwerty-fretboard control\n\(engine.ccInputLabel) (MIDI mode not required)\n\(engine.midiInputSummary)\n\(engine.permissionStatus)\nHotkey: Control + Option + Command + Space"
         valuesLabel.stringValue = "Velocity \(engine.velocity)   Transpose \(engine.semitoneTranspose) st   Bend \(engine.bendRange) st"
+        rebuildCCMappingRows()
+        refreshMIDIMonitor()
         fretboardPreview.needsDisplay = true
+    }
+
+    func refreshMIDIMonitor() {
+        midiMonitorView.textColor = .systemGreen
+        midiMonitorView.backgroundColor = .black
+        midiMonitorView.string = engine.midiMonitorText
+        midiMonitorView.scrollToEndOfDocument(nil)
     }
 
     private func buildUI() {
@@ -719,28 +1176,96 @@ final class SettingsWindowController: NSWindowController {
         statusLabel.maximumNumberOfLines = 0
         stack.addArrangedSubview(statusLabel)
 
+        let tabView = NSTabView()
+        tabView.translatesAutoresizingMaskIntoConstraints = false
+        stack.addArrangedSubview(tabView)
+
+        let playStack = makeSettingsStack()
         modeButton.target = self
         modeButton.action = #selector(toggleMode)
         modeButton.bezelStyle = .rounded
-        stack.addArrangedSubview(modeButton)
+        playStack.addArrangedSubview(modeButton)
 
         overlayCheck.target = self
         overlayCheck.action = #selector(toggleOverlay)
-        stack.addArrangedSubview(overlayCheck)
+        playStack.addArrangedSubview(overlayCheck)
 
-        addSlider(stack, title: "Velocity", slider: velocitySlider, action: #selector(changeVelocity))
-        addSlider(stack, title: "Transpose", slider: transposeSlider, action: #selector(changeTranspose))
-        addSlider(stack, title: "Pitch bend range", slider: bendSlider, action: #selector(changeBend))
-        stack.addArrangedSubview(valuesLabel)
+        addSlider(playStack, title: "Velocity", slider: velocitySlider, action: #selector(changeVelocity))
+        addSlider(playStack, title: "Transpose", slider: transposeSlider, action: #selector(changeTranspose))
+        addSlider(playStack, title: "Pitch bend range", slider: bendSlider, action: #selector(changeBend))
+        playStack.addArrangedSubview(valuesLabel)
+
+        let accessActions = NSStackView()
+        accessActions.orientation = .horizontal
+        accessActions.spacing = 8
+        let checkAccess = NSButton(title: "Check Keyboard Access", target: self, action: #selector(checkKeyboardAccess))
+        checkAccess.bezelStyle = .rounded
+        let requestAccess = NSButton(title: "Request Access Prompt", target: self, action: #selector(requestKeyboardAccessPrompt))
+        requestAccess.bezelStyle = .rounded
+        let openAccess = NSButton(title: "Open Accessibility Settings", target: self, action: #selector(openAccessibilitySettings))
+        openAccess.bezelStyle = .rounded
+        accessActions.addArrangedSubview(checkAccess)
+        accessActions.addArrangedSubview(requestAccess)
+        accessActions.addArrangedSubview(openAccess)
+        playStack.addArrangedSubview(accessActions)
 
         fretboardPreview.translatesAutoresizingMaskIntoConstraints = false
-        stack.addArrangedSubview(fretboardPreview)
+        playStack.addArrangedSubview(fretboardPreview)
         fretboardPreview.heightAnchor.constraint(equalToConstant: 230).isActive = true
 
         let panic = NSButton(title: "Panic / All Notes Off", target: self, action: #selector(panic))
         panic.bezelStyle = .rounded
-        stack.addArrangedSubview(panic)
+        playStack.addArrangedSubview(panic)
+        addTab(to: tabView, title: "Play", view: playStack)
 
+        let midiStack = makeSettingsStack()
+        ccInputCheck.target = self
+        ccInputCheck.action = #selector(toggleCCInput)
+        midiStack.addArrangedSubview(ccInputCheck)
+
+        let mappingActions = NSStackView()
+        mappingActions.orientation = .horizontal
+        mappingActions.spacing = 8
+        let addMapping = NSButton(title: "Add CC Mapping", target: self, action: #selector(addCCMapping))
+        addMapping.bezelStyle = .rounded
+        let resetMappings = NSButton(title: "Reset Midivana Defaults", target: self, action: #selector(resetCCMappings))
+        resetMappings.bezelStyle = .rounded
+        let refreshInputs = NSButton(title: "Refresh MIDI Inputs", target: self, action: #selector(refreshMIDIInputs))
+        refreshInputs.bezelStyle = .rounded
+        let clearMonitor = NSButton(title: "Clear Monitor", target: self, action: #selector(clearMIDIMonitor))
+        clearMonitor.bezelStyle = .rounded
+        mappingActions.addArrangedSubview(addMapping)
+        mappingActions.addArrangedSubview(resetMappings)
+        mappingActions.addArrangedSubview(refreshInputs)
+        mappingActions.addArrangedSubview(clearMonitor)
+        midiStack.addArrangedSubview(mappingActions)
+
+        ccMappingRows.orientation = .vertical
+        ccMappingRows.alignment = .width
+        ccMappingRows.spacing = 6
+        midiStack.addArrangedSubview(ccMappingRows)
+
+        let monitorLabel = NSTextField(labelWithString: "MIDI Monitor")
+        monitorLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        midiStack.addArrangedSubview(monitorLabel)
+
+        midiMonitorView.isEditable = false
+        midiMonitorView.isSelectable = true
+        midiMonitorView.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        midiMonitorView.textColor = .systemGreen
+        midiMonitorView.backgroundColor = .black
+        midiMonitorView.textContainerInset = NSSize(width: 8, height: 6)
+
+        let monitorScroll = NSScrollView()
+        monitorScroll.hasVerticalScroller = true
+        monitorScroll.borderType = .bezelBorder
+        monitorScroll.documentView = midiMonitorView
+        monitorScroll.translatesAutoresizingMaskIntoConstraints = false
+        midiStack.addArrangedSubview(monitorScroll)
+        monitorScroll.heightAnchor.constraint(equalToConstant: 150).isActive = true
+        addTab(to: tabView, title: "MIDI CC", view: midiStack)
+
+        let helpStack = makeSettingsStack()
         let help = NSTextField(labelWithString: """
         Note rows:
         1 row: 1 2 3 4 5 6 7 8 9 0 -
@@ -759,18 +1284,37 @@ final class SettingsWindowController: NSWindowController {
         """)
         help.lineBreakMode = .byWordWrapping
         help.maximumNumberOfLines = 0
-        stack.addArrangedSubview(help)
+        helpStack.addArrangedSubview(help)
 
         let quit = NSButton(title: "Quit", target: NSApp, action: #selector(NSApplication.terminate(_:)))
         quit.bezelStyle = .rounded
-        stack.addArrangedSubview(quit)
+        helpStack.addArrangedSubview(quit)
+        addTab(to: tabView, title: "Help", view: helpStack)
 
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             stack.topAnchor.constraint(equalTo: root.topAnchor),
-            stack.bottomAnchor.constraint(lessThanOrEqualTo: root.bottomAnchor)
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: root.bottomAnchor),
+            tabView.heightAnchor.constraint(greaterThanOrEqualToConstant: 560)
         ])
+    }
+
+    private func makeSettingsStack() -> NSStackView {
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .width
+        stack.spacing = 12
+        stack.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }
+
+    private func addTab(to tabView: NSTabView, title: String, view: NSView) {
+        let item = NSTabViewItem(identifier: title)
+        item.label = title
+        item.view = view
+        tabView.addTabViewItem(item)
     }
 
     private func addSlider(_ stack: NSStackView, title: String, slider: NSSlider, action: Selector) {
@@ -779,6 +1323,75 @@ final class SettingsWindowController: NSWindowController {
         slider.action = action
         stack.addArrangedSubview(label)
         stack.addArrangedSubview(slider)
+    }
+
+    private func rebuildCCMappingRows() {
+        for view in ccMappingRows.arrangedSubviews {
+            ccMappingRows.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+
+        for (index, mapping) in engine.ccMappings.enumerated() {
+            let row = NSStackView()
+            row.orientation = .horizontal
+            row.alignment = .centerY
+            row.spacing = 7
+
+            let enabled = NSButton(checkboxWithTitle: "", target: self, action: #selector(toggleCCMapping(_:)))
+            enabled.tag = index
+            enabled.state = mapping.enabled ? .on : .off
+            enabled.toolTip = "Enable mapping"
+            row.addArrangedSubview(enabled)
+
+            let ccLabel = NSTextField(labelWithString: "CC \(mapping.cc)")
+            ccLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+            ccLabel.widthAnchor.constraint(equalToConstant: 52).isActive = true
+            row.addArrangedSubview(ccLabel)
+
+            let ccStepper = NSStepper()
+            ccStepper.minValue = 0
+            ccStepper.maxValue = 127
+            ccStepper.integerValue = mapping.cc
+            ccStepper.target = self
+            ccStepper.action = #selector(changeCCMappingController(_:))
+            ccStepper.tag = index
+            row.addArrangedSubview(ccStepper)
+
+            let channelLabel = NSTextField(labelWithString: mapping.channel == 0 ? "Any" : "Ch \(mapping.channel)")
+            channelLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+            channelLabel.widthAnchor.constraint(equalToConstant: 44).isActive = true
+            row.addArrangedSubview(channelLabel)
+
+            let channelStepper = NSStepper()
+            channelStepper.minValue = 0
+            channelStepper.maxValue = 16
+            channelStepper.integerValue = mapping.channel
+            channelStepper.target = self
+            channelStepper.action = #selector(changeCCMappingChannel(_:))
+            channelStepper.tag = index
+            row.addArrangedSubview(channelStepper)
+
+            let commandPopup = NSPopUpButton()
+            commandPopup.target = self
+            commandPopup.action = #selector(changeCCMappingCommand(_:))
+            commandPopup.tag = index
+            for option in engine.commandOptions {
+                commandPopup.addItem(withTitle: option.title)
+                commandPopup.lastItem?.representedObject = Int(option.keyCode)
+            }
+            if let selectedIndex = engine.commandOptions.firstIndex(where: { $0.keyCode == mapping.keyCode }) {
+                commandPopup.selectItem(at: selectedIndex)
+            }
+            commandPopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
+            row.addArrangedSubview(commandPopup)
+
+            let delete = NSButton(title: "Delete", target: self, action: #selector(deleteCCMapping(_:)))
+            delete.bezelStyle = .rounded
+            delete.tag = index
+            row.addArrangedSubview(delete)
+
+            ccMappingRows.addArrangedSubview(row)
+        }
     }
 
     @objc private func toggleMode() {
@@ -799,6 +1412,68 @@ final class SettingsWindowController: NSWindowController {
 
     @objc private func changeBend() {
         engine.bendRange = bendSlider.integerValue
+    }
+
+    @objc private func checkKeyboardAccess() {
+        (NSApp.delegate as? AppDelegate)?.installEventTap()
+    }
+
+    @objc private func requestKeyboardAccessPrompt() {
+        (NSApp.delegate as? AppDelegate)?.requestAccessibilityPrompt()
+    }
+
+    @objc private func openAccessibilitySettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc private func toggleCCInput() {
+        engine.ccInputEnabled = ccInputCheck.state == .on
+    }
+
+    @objc private func addCCMapping() {
+        engine.addCCMapping()
+    }
+
+    @objc private func resetCCMappings() {
+        engine.resetCCMappings()
+    }
+
+    @objc private func refreshMIDIInputs() {
+        engine.refreshMIDIInputs()
+    }
+
+    @objc private func clearMIDIMonitor() {
+        engine.clearMIDIMonitor()
+    }
+
+    @objc private func toggleCCMapping(_ sender: NSButton) {
+        engine.updateCCMapping(at: sender.tag) { mapping in
+            mapping.enabled = sender.state == .on
+        }
+    }
+
+    @objc private func changeCCMappingController(_ sender: NSStepper) {
+        engine.updateCCMapping(at: sender.tag) { mapping in
+            mapping.cc = sender.integerValue
+        }
+    }
+
+    @objc private func changeCCMappingChannel(_ sender: NSStepper) {
+        engine.updateCCMapping(at: sender.tag) { mapping in
+            mapping.channel = sender.integerValue
+        }
+    }
+
+    @objc private func changeCCMappingCommand(_ sender: NSPopUpButton) {
+        guard let rawValue = sender.selectedItem?.representedObject as? Int else { return }
+        engine.updateCCMapping(at: sender.tag) { mapping in
+            mapping.keyCode = CGKeyCode(rawValue)
+        }
+    }
+
+    @objc private func deleteCCMapping(_ sender: NSButton) {
+        engine.deleteCCMapping(at: sender.tag)
     }
 
     @objc private func panic() {
